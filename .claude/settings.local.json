@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app:*)",
+      "Read(//c/Users/danie/OneDrive/Desktop/Zorgdossier/**)",
+      "Bash(npm install:*)",
+      "Bash(npx prisma:*)",
+      "Bash(node -e \"console.log(require(''crypto'').randomBytes(32).toString(''base64''))\")",
+      "Bash(psql:*)",
+      "Bash(npm run dev:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Read(//c/Users/danie/OneDrive/Pictures/Screenshots 1/**)",
+      "Bash(npx shadcn@latest add:*)",
+      "Bash(npx tsx:*)",
+      "Bash(ssh:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

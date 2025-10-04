@@ -1,0 +1,334 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  CLIENT
+  CAREGIVER
+  FAMILY
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+enum RelationshipStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  password          String
+  role              UserRole
+  emailVerified     DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Profile relationships (one-to-one)
+  clientProfile     ClientProfile?
+  caregiverProfile  CaregiverProfile?
+  familyProfile     FamilyProfile?
+
+  // Verification tokens
+  verificationTokens VerificationToken[]
+
+  @@index([email])
+}
+
+model ClientProfile {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name          String
+  dateOfBirth   DateTime
+  address       String
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relationships with caregivers
+  caregiverInvitationsSent CaregiverInvitation[] @relation("ClientInvitations")
+  caregiverRelationships   CaregiverClientRelationship[] @relation("ClientRelationships")
+
+  // Care reports about this client
+  careReports   CareReport[]
+
+  // Medications for this client
+  medications   Medication[]
+  medicationAdministrations MedicationAdministration[]
+
+  // Family relationships (future feature)
+  familyMembers FamilyClientRelationship[]
+
+  @@index([userId])
+}
+
+model CaregiverProfile {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name          String
+  phoneNumber   String
+  address       String
+  bio           String?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Invitations from clients
+  invitationsReceived CaregiverInvitation[] @relation("CaregiverInvitations")
+
+  // Relationships with clients
+  clientRelationships CaregiverClientRelationship[] @relation("CaregiverRelationships")
+
+  // Care reports created by this caregiver
+  careReports   CareReport[]
+
+  // Medication administrations by this caregiver
+  medicationAdministrations MedicationAdministration[]
+
+  @@index([userId])
+  @@index([name])
+  @@index([address])
+}
+
+model FamilyProfile {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name          String
+  phoneNumber   String?
+  relationship  String?  // e.g., "Daughter", "Son", "Spouse"
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Client relationships
+  clientRelationships FamilyClientRelationship[]
+
+  @@index([userId])
+}
+
+model CaregiverInvitation {
+  id            String           @id @default(cuid())
+
+  clientId      String
+  client        ClientProfile    @relation("ClientInvitations", fields: [clientId], references: [id], onDelete: Cascade)
+
+  // Either caregiverId (existing user) OR invitedEmail (new user) must be set
+  caregiverId   String?
+  caregiver     CaregiverProfile? @relation("CaregiverInvitations", fields: [caregiverId], references: [id], onDelete: Cascade)
+
+  invitedEmail  String?          // Email for users who don't have an account yet
+
+  status        InvitationStatus @default(PENDING)
+  invitationToken String         @unique @default(cuid())
+
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  respondedAt   DateTime?
+
+  @@index([caregiverId, status])
+  @@index([invitationToken])
+  @@index([invitedEmail])
+}
+
+model CaregiverClientRelationship {
+  id            String             @id @default(cuid())
+
+  caregiverId   String
+  caregiver     CaregiverProfile   @relation("CaregiverRelationships", fields: [caregiverId], references: [id], onDelete: Cascade)
+
+  clientId      String
+  client        ClientProfile      @relation("ClientRelationships", fields: [clientId], references: [id], onDelete: Cascade)
+
+  status        RelationshipStatus @default(ACTIVE)
+
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  deactivatedAt DateTime?
+
+  @@unique([caregiverId, clientId])
+  @@index([caregiverId, status])
+  @@index([clientId, status])
+}
+
+model CareReport {
+  id            String            @id @default(cuid())
+
+  caregiverId   String
+  caregiver     CaregiverProfile  @relation(fields: [caregiverId], references: [id], onDelete: Cascade)
+
+  clientId      String
+  client        ClientProfile     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  content       String            @db.Text
+  reportDate    DateTime          // The date the care was provided
+
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  // Images attached to this report
+  images        CareReportImage[]
+
+  // Version history for edits
+  versions      CareReportVersion[]
+
+  @@index([caregiverId])
+  @@index([clientId])
+  @@index([reportDate])
+  @@index([clientId, reportDate])
+}
+
+model CareReportImage {
+  id            String     @id @default(cuid())
+
+  reportId      String
+  report        CareReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  imageData     Bytes      // Store image as binary data
+  mimeType      String     // e.g., "image/jpeg", "image/png"
+  fileName      String
+  fileSize      Int        // in bytes
+
+  createdAt     DateTime   @default(now())
+
+  @@index([reportId])
+}
+
+model CareReportVersion {
+  id            String     @id @default(cuid())
+
+  reportId      String
+  report        CareReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  content       String     @db.Text  // The content at this version
+  versionNumber Int                  // 1 = original, 2 = first edit, etc.
+
+  createdAt     DateTime   @default(now())
+
+  @@index([reportId])
+  @@unique([reportId, versionNumber])
+}
+
+model FamilyClientRelationship {
+  id            String        @id @default(cuid())
+
+  familyId      String
+  family        FamilyProfile @relation(fields: [familyId], references: [id], onDelete: Cascade)
+
+  clientId      String
+  client        ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  canViewReports Boolean      @default(true)
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@unique([familyId, clientId])
+  @@index([familyId])
+  @@index([clientId])
+}
+
+model VerificationToken {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String   @unique
+  expires    DateTime
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, token])
+  @@index([token])
+}
+
+model SystemSettings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String   @db.Text
+  category  String   // "general", "email", "security", "privacy"
+  updatedAt DateTime @updatedAt
+  updatedBy String?  // User ID who last updated this setting
+
+  @@index([category])
+  @@index([key])
+}
+
+// Medication management
+model Medication {
+  id              String   @id @default(cuid())
+
+  clientId        String
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  name            String   // Medicine name
+  dosage          String   // e.g., "10mg", "2 tablets"
+  unit            String   // e.g., "mg", "ml", "tablets"
+  frequency       String   // e.g., "daily", "twice daily", "as needed"
+  instructions    String?  @db.Text // Special instructions
+
+  // Timing - times during the day when medication should be given
+  times           String   // JSON array of times: ["08:00", "20:00"]
+
+  isActive        Boolean  @default(true)
+  startDate       DateTime @default(now())
+  endDate         DateTime? // Optional end date for temporary medications
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String   // User ID who created this medication entry
+
+  // Administrations of this medication
+  administrations MedicationAdministration[]
+
+  @@index([clientId])
+  @@index([isActive])
+  @@index([startDate])
+}
+
+model MedicationAdministration {
+  id              String   @id @default(cuid())
+
+  medicationId    String
+  medication      Medication @relation(fields: [medicationId], references: [id], onDelete: Cascade)
+
+  clientId        String
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  caregiverId     String
+  caregiver       CaregiverProfile @relation(fields: [caregiverId], references: [id], onDelete: Cascade)
+
+  scheduledTime   DateTime // When medication should have been given
+  administeredAt  DateTime @default(now()) // When it was actually given
+
+  dosageGiven     String   // Actual dosage given (might differ from prescribed)
+  notes           String?  @db.Text // Any notes about this administration
+
+  wasGiven        Boolean  @default(true) // false if medication was skipped/refused
+  skipReason      String?  // Reason if wasGiven is false
+
+  createdAt       DateTime @default(now())
+
+  @@index([medicationId])
+  @@index([clientId])
+  @@index([caregiverId])
+  @@index([scheduledTime])
+  @@index([administeredAt])
+}
