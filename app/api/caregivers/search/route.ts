@@ -39,10 +39,19 @@ export async function GET(request: NextRequest) {
     // Search caregivers by name, email, or address
     const caregivers = await prisma.caregiverProfile.findMany({
       where: {
-        OR: [
-          { name: { contains: query, mode: "insensitive" } },
-          { address: { contains: query, mode: "insensitive" } },
-          { user: { email: { contains: query, mode: "insensitive" } } },
+        AND: [
+          {
+            OR: [
+              { name: { contains: query, mode: "insensitive" } },
+              { address: { contains: query, mode: "insensitive" } },
+              { user: { email: { contains: query, mode: "insensitive" } } },
+            ],
+          },
+          {
+            user: {
+              role: "CAREGIVER", // Only show actual caregivers, not admins
+            },
+          },
         ],
       },
       include: {

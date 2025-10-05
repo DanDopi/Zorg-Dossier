@@ -52,6 +52,7 @@ interface Medication {
   instructions?: string
   times: string
   isActive: boolean
+  imageUrl?: string | null
 }
 
 interface User {
@@ -97,7 +98,15 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
     frequency: "daily",
     instructions: "",
     times: ["08:00"],
+    endDate: "",
+    imageUrl: "",
   })
+  const [selectedImage, setSelectedImage] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+
+  // Image view dialog state
+  const [imageViewDialogOpen, setImageViewDialogOpen] = useState(false)
+  const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null)
 
   // Administer medication state
   const [administerDialogOpen, setAdministerDialogOpen] = useState(false)
@@ -161,11 +170,24 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
 
   async function handleAddMedication() {
     try {
+      let finalImageUrl = newMedication.imageUrl
+
+      // If user uploaded a file, convert to base64 data URL
+      if (selectedImage) {
+        finalImageUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onloadend = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(selectedImage)
+        })
+      }
+
       const response = await fetch("/api/medications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...newMedication,
+          imageUrl: finalImageUrl,
           clientId: selectedClient || undefined,
         }),
       })
@@ -179,15 +201,46 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
           frequency: "daily",
           instructions: "",
           times: ["08:00"],
+          endDate: "",
+          imageUrl: "",
         })
+        setSelectedImage(null)
+        setImagePreview(null)
         loadData()
       } else {
         const error = await response.json()
+        console.error("API Error:", error)
         alert(error.error || "Fout bij toevoegen medicatie")
       }
     } catch (error) {
       console.error("Error adding medication:", error)
       alert("Er is een fout opgetreden")
+    }
+  }
+
+  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        alert('Selecteer een geldig afbeeldingsbestand')
+        return
+      }
+
+      // Validate file size (max 2MB for base64 storage)
+      if (file.size > 2 * 1024 * 1024) {
+        alert('Afbeelding is te groot. Maximaal 2MB toegestaan.')
+        return
+      }
+
+      setSelectedImage(file)
+
+      // Create preview
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
     }
   }
 
@@ -221,6 +274,28 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
       }
     } catch (error) {
       console.error("Error administering medication:", error)
+      alert("Er is een fout opgetreden")
+    }
+  }
+
+  async function handleDeleteMedication(medicationId: string) {
+    if (!confirm("Weet u zeker dat u deze medicatie wilt verwijderen?")) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/medications?id=${medicationId}`, {
+        method: "DELETE",
+      })
+
+      if (response.ok) {
+        loadData()
+      } else {
+        const error = await response.json()
+        alert(error.error || "Fout bij verwijderen medicatie")
+      }
+    } catch (error) {
+      console.error("Error deleting medication:", error)
       alert("Er is een fout opgetreden")
     }
   }
@@ -394,6 +469,40 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
                       }
                       placeholder="Bijv. Innemen met voedsel"
                     />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="endDate">Einddatum (optioneel)</Label>
+                    <Input
+                      id="endDate"
+                      type="date"
+                      value={newMedication.endDate}
+                      onChange={(e) =>
+                        setNewMedication({ ...newMedication, endDate: e.target.value })
+                      }
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="imageFile">Afbeelding (optioneel)</Label>
+                    <Input
+                      id="imageFile"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageSelect}
+                    />
+                    {imagePreview && (
+                      <div className="mt-2">
+                        <img
+                          src={imagePreview}
+                          alt="Medicatie voorbeeld"
+                          className="max-w-xs max-h-40 object-contain border rounded"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none'
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex justify-end gap-2">
@@ -587,14 +696,37 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
             <CardContent>
               <div className="space-y-2">
                 {medications.map((med) => (
-                  <div key={med.id} className="p-3 border rounded-lg">
-                    <div className="font-medium">{med.name}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {med.dosage} {med.unit} - {med.frequency}
-                      {med.instructions && ` - ${med.instructions}`}
+                  <div key={med.id} className="p-3 border rounded-lg flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="font-medium">{med.name}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {med.dosage} {med.unit} - {med.frequency}
+                        {med.instructions && ` - ${med.instructions}`}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        Tijden: {JSON.parse(med.times).join(", ")}
+                      </div>
                     </div>
-                    <div className="text-sm text-muted-foreground">
-                      Tijden: {JSON.parse(med.times).join(", ")}
+                    <div className="flex gap-2">
+                      {med.imageUrl && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setViewingImageUrl(med.imageUrl!)
+                            setImageViewDialogOpen(true)
+                          }}
+                        >
+                          Afbeelding
+                        </Button>
+                      )}
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleDeleteMedication(med.id)}
+                      >
+                        Verwijder
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -657,6 +789,31 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
               Annuleren
             </Button>
             <Button onClick={handleAdministerMedication}>Registreren</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Image view dialog */}
+      <Dialog open={imageViewDialogOpen} onOpenChange={setImageViewDialogOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Medicatie Afbeelding</DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center justify-center p-4">
+            {viewingImageUrl && (
+              <img
+                src={viewingImageUrl}
+                alt="Medicatie afbeelding"
+                className="max-w-full max-h-[70vh] object-contain"
+                onError={(e) => {
+                  e.currentTarget.src = ""
+                  e.currentTarget.alt = "Afbeelding kon niet geladen worden"
+                }}
+              />
+            )}
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={() => setImageViewDialogOpen(false)}>Sluiten</Button>
           </div>
         </DialogContent>
       </Dialog>
