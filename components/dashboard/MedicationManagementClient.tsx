@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useClient } from "@/lib/ClientContext"
 
 interface ScheduleItem {
   medication: {
@@ -97,11 +98,11 @@ interface MedicationManagementClientProps {
 }
 
 export default function MedicationManagementClient({ user }: MedicationManagementClientProps) {
+  const { selectedClient } = useClient()
   const [medications, setMedications] = useState<Medication[]>([])
   const [dailySchedule, setDailySchedule] = useState<DailySchedule | null>(null)
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split("T")[0])
   const [isLoading, setIsLoading] = useState(true)
-  const [selectedClient, setSelectedClient] = useState<string>("")
 
   // Add medication dialog state
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
@@ -153,21 +154,12 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
   const isTodayOrPast = selectedDate <= new Date().toISOString().split("T")[0]
 
   useEffect(() => {
-    if (isCaregiver && user.caregiverProfile?.clientRelationships.length) {
-      setSelectedClient(user.caregiverProfile.clientRelationships[0].client.id)
-    } else if (isClient) {
-      // For clients, load data immediately
+    // For clients, load data immediately
+    if (isClient) {
       loadData()
     }
-  }, [])
-
-  useEffect(() => {
-    // For caregivers: reload when client or date changes
-    if (isCaregiver && selectedClient) {
-      loadData()
-    }
-    // For clients: reload when date changes
-    else if (isClient) {
+    // For caregivers, only load if a client is selected
+    else if (isCaregiver && selectedClient) {
       loadData()
     }
   }, [selectedClient, selectedDate])
@@ -175,7 +167,7 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
   async function loadData() {
     setIsLoading(true)
     try {
-      const clientId = isClient ? undefined : selectedClient
+      const clientId = isClient ? undefined : selectedClient?.id
       const params = new URLSearchParams()
       if (clientId) params.set("clientId", clientId)
       params.set("date", selectedDate)
@@ -221,7 +213,7 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
         body: JSON.stringify({
           ...newMedication,
           imageUrl: finalImageUrl,
-          clientId: selectedClient || undefined,
+          clientId: selectedClient?.id || undefined,
         }),
       })
 
@@ -681,29 +673,6 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
             </Dialog>
           )}
         </div>
-
-        {/* Client selector for caregivers */}
-        {isCaregiver && user.caregiverProfile?.clientRelationships && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Selecteer Cliënt</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Select value={selectedClient} onValueChange={setSelectedClient}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Kies een cliënt" />
-                </SelectTrigger>
-                <SelectContent>
-                  {user.caregiverProfile.clientRelationships.map((rel) => (
-                    <SelectItem key={rel.client.id} value={rel.client.id}>
-                      {rel.client.name} ({rel.client.user.email})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </CardContent>
-          </Card>
-        )}
 
         {/* Date Navigation */}
         <Card>

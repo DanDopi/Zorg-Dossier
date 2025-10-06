@@ -16,7 +16,24 @@ export default async function DashboardPage() {
     where: { id: session.user.id },
     include: {
       clientProfile: true,
-      caregiverProfile: true,
+      caregiverProfile: {
+        include: {
+          clientRelationships: {
+            where: { status: "ACTIVE" },
+            include: {
+              client: {
+                include: {
+                  user: {
+                    select: {
+                      email: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     },
   })
 
@@ -24,12 +41,21 @@ export default async function DashboardPage() {
     redirect("/login")
   }
 
+  // Prepare clients list for caregivers
+  const clients = user.role === "CAREGIVER" && user.caregiverProfile
+    ? user.caregiverProfile.clientRelationships.map(rel => ({
+        id: rel.client.id,
+        name: rel.client.name,
+        email: rel.client.user.email,
+      }))
+    : undefined
+
   // Render dashboard based on user role
   switch (user.role) {
     case "CLIENT":
       return <ClientDashboard user={user} />
     case "CAREGIVER":
-      return <CaregiverDashboard user={user} />
+      return <CaregiverDashboard user={user} clients={clients} />
     case "ADMIN":
     case "SUPER_ADMIN":
       return <AdminDashboard user={user} />

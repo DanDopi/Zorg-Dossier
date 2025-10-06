@@ -14,7 +14,24 @@ export default async function MijnClientenPage() {
     where: { id: session.user.id },
     include: {
       clientProfile: true,
-      caregiverProfile: true,
+      caregiverProfile: {
+        include: {
+          clientRelationships: {
+            where: { status: "ACTIVE" },
+            include: {
+              client: {
+                include: {
+                  user: {
+                    select: {
+                      email: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     },
   })
 
@@ -27,5 +44,14 @@ export default async function MijnClientenPage() {
     redirect("/dashboard")
   }
 
-  return <MijnClientenClient user={user} />
+  // Prepare clients list for caregivers
+  const clients = user.caregiverProfile
+    ? user.caregiverProfile.clientRelationships.map(rel => ({
+        id: rel.client.id,
+        name: rel.client.name,
+        email: rel.client.user.email,
+      }))
+    : []
+
+  return <MijnClientenClient user={user} clients={clients} />
 }

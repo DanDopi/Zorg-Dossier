@@ -3,20 +3,61 @@
 import { signOut } from "next-auth/react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { ClientProvider, useClient } from "@/lib/ClientContext"
+
+interface Client {
+  id: string
+  name: string
+  email: string
+}
 
 interface DashboardLayoutProps {
   children: React.ReactNode
   userName: string
   userRole: string
+  clients?: Client[]
 }
 
-export default function DashboardLayout({ children, userName, userRole }: DashboardLayoutProps) {
+function DashboardLayoutContent({ children, userName, userRole, clients }: DashboardLayoutProps) {
   const pathname = usePathname()
+  const { selectedClient, setSelectedClient } = useClient()
+  const [showSwitchDialog, setShowSwitchDialog] = useState(false)
+  const [pendingClient, setPendingClient] = useState<Client | null>(null)
+
+  const isCaregiver = userRole === "CAREGIVER"
 
   const handleSignOut = async () => {
     await signOut({ callbackUrl: "/" })
+  }
+
+  const handleClientChange = (clientId: string) => {
+    const client = clients?.find(c => c.id === clientId)
+    if (!client) return
+
+    if (selectedClient && selectedClient.id !== clientId) {
+      setPendingClient(client)
+      setShowSwitchDialog(true)
+    } else {
+      setSelectedClient(client)
+    }
+  }
+
+  const confirmClientSwitch = () => {
+    if (pendingClient) {
+      setSelectedClient(pendingClient)
+      setPendingClient(null)
+    }
+    setShowSwitchDialog(false)
+  }
+
+  const cancelClientSwitch = () => {
+    setPendingClient(null)
+    setShowSwitchDialog(false)
   }
 
   // Client menu items
@@ -70,6 +111,33 @@ export default function DashboardLayout({ children, userName, userRole }: Dashbo
                 {(userRole === "ADMIN" || userRole === "SUPER_ADMIN") && "Admin Dashboard"}
               </span>
             </div>
+
+            {/* Global Client Selector for Caregivers */}
+            {isCaregiver && clients && clients.length > 0 && (
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <Select
+                  value={selectedClient?.id || ""}
+                  onValueChange={handleClientChange}
+                >
+                  <SelectTrigger className="w-[280px] font-medium border-2 border-blue-200 bg-blue-50">
+                    <SelectValue placeholder="Selecteer een cliënt" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clients.map((client) => (
+                      <SelectItem key={client.id} value={client.id}>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{client.name}</span>
+                          <span className="text-xs text-muted-foreground">{client.email}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="flex items-center space-x-4">
               <Link href="/profile">
@@ -137,9 +205,69 @@ export default function DashboardLayout({ children, userName, userRole }: Dashbo
 
         {/* Main Content */}
         <main className={`flex-1 ${showSidebar ? "" : "container mx-auto"} px-4 py-8`}>
+          {/* Warning Banner for Caregivers */}
+          {isCaregiver && selectedClient && (
+            <div className="mb-4 bg-blue-100 border-2 border-blue-400 rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div className="flex-1">
+                  <p className="font-bold text-blue-900">Actieve Cliënt:</p>
+                  <p className="text-blue-800">{selectedClient.name} ({selectedClient.email})</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Warning if no client selected */}
+          {isCaregiver && !selectedClient && clients && clients.length > 0 && (
+            <div className="mb-4 bg-yellow-100 border-2 border-yellow-400 rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <p className="font-medium text-yellow-900">Selecteer eerst een cliënt in de bovenste balk om te beginnen met werken.</p>
+              </div>
+            </div>
+          )}
+
           {children}
         </main>
       </div>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={showSwitchDialog} onOpenChange={setShowSwitchDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cliënt Wisselen?</DialogTitle>
+            <DialogDescription>
+              Weet u zeker dat u wilt wisselen naar{" "}
+              <strong>{pendingClient?.name}</strong>?
+              <br /><br />
+              Alle huidige gegevens die u bekijkt zijn voor{" "}
+              <strong>{selectedClient?.name}</strong>. Na het wisselen ziet u de gegevens van{" "}
+              <strong>{pendingClient?.name}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={cancelClientSwitch}>
+              Annuleren
+            </Button>
+            <Button onClick={confirmClientSwitch}>
+              Ja, Wissel Cliënt
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  )
+}
+
+export default function DashboardLayout(props: DashboardLayoutProps) {
+  return (
+    <ClientProvider>
+      <DashboardLayoutContent {...props} />
+    </ClientProvider>
   )
 }

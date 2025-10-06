@@ -32,15 +32,22 @@ interface ReportData {
   images?: Array<{ id: string }>
 }
 
+interface Client {
+  id: string
+  name: string
+  email: string
+}
+
 interface CaregiverDashboardProps {
   user: UserWithProfile & {
     caregiverProfile?: {
       name: string
     } | null
   }
+  clients?: Client[]
 }
 
-export default function CaregiverDashboard({ user }: CaregiverDashboardProps) {
+export default function CaregiverDashboard({ user, clients }: CaregiverDashboardProps) {
   const [invitations, setInvitations] = useState<Invitation[]>([])
   const [isLoadingInvitations, setIsLoadingInvitations] = useState(true)
   const [recentReports, setRecentReports] = useState<ReportData[]>([])
@@ -82,7 +89,7 @@ export default function CaregiverDashboard({ user }: CaregiverDashboardProps) {
   const pendingInvitations = invitations.filter(inv => inv.status === "PENDING")
 
   return (
-    <DashboardLayout userName={user.caregiverProfile?.name || user.email} userRole={user.role}>
+    <DashboardLayout userName={user.caregiverProfile?.name || user.email} userRole={user.role} clients={clients}>
       <div className="space-y-6">
         {/* Welcome Section */}
         <div>

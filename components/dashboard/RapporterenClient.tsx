@@ -4,7 +4,6 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import DashboardLayout from "@/components/dashboard/DashboardLayout"
 
 interface ClientProfile {
   id: string
@@ -89,10 +88,7 @@ export default function RapporterenClient({ user }: RapporterenClientProps) {
   const isClient = user.role === "CLIENT"
 
   return (
-    <DashboardLayout
-      userName={user.clientProfile?.name || user.caregiverProfile?.name || user.email}
-      userRole={user.role}
-    >
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="space-y-6">
         {/* Welcome Section */}
         <div>
@@ -242,6 +238,6 @@ export default function RapporterenClient({ user }: RapporterenClientProps) {
           </CardContent>
         </Card>
       </div>
-    </DashboardLayout>
+    </div>
   )
 }

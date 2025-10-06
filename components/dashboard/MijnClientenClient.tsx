@@ -64,11 +64,18 @@ interface UserWithProfile {
   } | null
 }
 
-interface MijnClientenClientProps {
-  user: UserWithProfile
+interface Client {
+  id: string
+  name: string
+  email: string
 }
 
-export default function MijnClientenClient({ user }: MijnClientenClientProps) {
+interface MijnClientenClientProps {
+  user: UserWithProfile
+  clients?: Client[]
+}
+
+export default function MijnClientenClient({ user, clients: clientsProp }: MijnClientenClientProps) {
   const [clients, setClients] = useState<ClientRelationship[]>([])
   const [invitations, setInvitations] = useState<Invitation[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -164,6 +171,7 @@ export default function MijnClientenClient({ user }: MijnClientenClientProps) {
     <DashboardLayout
       userName={user.caregiverProfile?.name || user.email}
       userRole={user.role}
+      clients={clientsProp}
     >
       <div className="space-y-6">
         {/* Welcome Section */}

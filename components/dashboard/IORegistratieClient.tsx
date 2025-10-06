@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useClient } from "@/lib/ClientContext"
 
 interface DefecationRecord {
   id: string
@@ -80,8 +81,8 @@ interface IORegistratieClientProps {
 }
 
 export default function IORegistratieClient({ user }: IORegistratieClientProps) {
+  const { selectedClient } = useClient()
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split("T")[0])
-  const [selectedClient, setSelectedClient] = useState<string>("")
   const [isLoading, setIsLoading] = useState(true)
 
   // Defecation state
@@ -118,17 +119,12 @@ export default function IORegistratieClient({ user }: IORegistratieClientProps) 
   const isTodayOrPast = selectedDate <= new Date().toISOString().split("T")[0]
 
   useEffect(() => {
-    if (isCaregiver && user.caregiverProfile?.clientRelationships.length) {
-      setSelectedClient(user.caregiverProfile.clientRelationships[0].client.id)
-    } else if (isClient) {
+    // For clients, load data immediately
+    if (isClient) {
       loadData()
     }
-  }, [])
-
-  useEffect(() => {
-    if (isCaregiver && selectedClient) {
-      loadData()
-    } else if (isClient) {
+    // For caregivers, only load if a client is selected
+    else if (isCaregiver && selectedClient) {
       loadData()
     }
   }, [selectedClient, selectedDate])
@@ -136,7 +132,7 @@ export default function IORegistratieClient({ user }: IORegistratieClientProps) 
   async function loadData() {
     setIsLoading(true)
     try {
-      const clientId = isClient ? undefined : selectedClient
+      const clientId = isClient ? undefined : selectedClient?.id
       const params = new URLSearchParams()
       if (clientId) params.set("clientId", clientId)
       params.set("date", selectedDate)
@@ -180,7 +176,7 @@ export default function IORegistratieClient({ user }: IORegistratieClientProps) 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clientId: selectedClient || undefined,
+          clientId: selectedClient?.id || undefined,
           recordDate: recordDate.toISOString(),
           recordTime: recordTime.toISOString(),
           amount: newDefecation.amount,
@@ -242,7 +238,7 @@ export default function IORegistratieClient({ user }: IORegistratieClientProps) 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clientId: selectedClient || undefined,
+          clientId: selectedClient?.id || undefined,
           recordDate: recordDate.toISOString(),
           recordTime: recordTime.toISOString(),
           volume: parseInt(newUrine.volume),
@@ -302,7 +298,7 @@ export default function IORegistratieClient({ user }: IORegistratieClientProps) 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          clientId: selectedClient || undefined,
+          clientId: selectedClient?.id || undefined,
           recordDate: recordDate.toISOString(),
           recordTime: recordTime.toISOString(),
           volume: parseInt(newFluidIntake.volume),
@@ -384,29 +380,6 @@ export default function IORegistratieClient({ user }: IORegistratieClientProps) 
             </p>
           </div>
         </div>
-
-        {/* Client selector for caregivers */}
-        {isCaregiver && user.caregiverProfile?.clientRelationships && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Selecteer Cliënt</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Select value={selectedClient} onValueChange={setSelectedClient}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Kies een cliënt" />
-                </SelectTrigger>
-                <SelectContent>
-                  {user.caregiverProfile.clientRelationships.map((rel) => (
-                    <SelectItem key={rel.client.id} value={rel.client.id}>
-                      {rel.client.name} ({rel.client.user.email})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </CardContent>
-          </Card>
-        )}
 
         {/* Date Navigation */}
         <Card>
