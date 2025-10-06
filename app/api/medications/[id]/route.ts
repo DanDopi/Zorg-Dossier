@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma"
 // PUT - Update medication
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth()
@@ -17,7 +17,8 @@ export async function PUT(
       )
     }
 
-    const medicationId = params.id
+    const resolvedParams = await params
+    const medicationId = resolvedParams.id
     const body = await request.json()
     const { name, dosage, unit, frequency, instructions, times, startDate, endDate, isActive } = body
 
@@ -78,7 +79,7 @@ export async function PUT(
 // DELETE - Delete (deactivate) medication
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth()
@@ -90,7 +91,8 @@ export async function DELETE(
       )
     }
 
-    const medicationId = params.id
+    const resolvedParams = await params
+    const medicationId = resolvedParams.id
 
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },

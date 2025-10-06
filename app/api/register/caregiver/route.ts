@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
 
       // Check if the invitation email matches the registration email
       // For email-based invitations, check invitedEmail field
-      if (invitation.caregiverId && invitation.caregiver.user.email !== email) {
+      if (invitation.caregiverId && invitation.caregiver && invitation.caregiver.user.email !== email) {
         return NextResponse.json(
           { error: "Deze uitnodiging is voor een ander email adres" },
           { status: 400 }

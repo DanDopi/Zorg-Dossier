@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
+import { Prisma } from "@prisma/client"
 
 // GET /api/reports - Get reports (filtered by role)
 export async function GET(request: NextRequest) {
@@ -32,7 +33,30 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    let reports: any[] = []
+    type CareReportWithRelations = Prisma.CareReportGetPayload<{
+      include: {
+        client: {
+          include: {
+            user: {
+              select: {
+                email: true
+              }
+            }
+          }
+        }
+        caregiver: {
+          include: {
+            user: {
+              select: {
+                email: true
+              }
+            }
+          }
+        }
+      }
+    }>
+
+    let reports: CareReportWithRelations[] = []
 
     if (user.role === "CAREGIVER" && user.caregiverProfile) {
       // Caregiver can see ALL reports for their active clients (from all caregivers)
@@ -49,7 +73,7 @@ export async function GET(request: NextRequest) {
 
       const activeClientIds = activeRelationships.map(rel => rel.clientId)
 
-      const where: any = {
+      const where: Prisma.CareReportWhereInput = {
         clientId: {
           in: activeClientIds,
         },

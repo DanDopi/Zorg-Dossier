@@ -44,9 +44,9 @@ export default function VerifyEmailPage() {
         setTimeout(() => {
           router.push("/login?verified=true")
         }, 3000)
-      } catch (err: any) {
+      } catch (err) {
         setStatus("error")
-        setMessage(err.message)
+        setMessage(err instanceof Error ? err.message : 'Verificatie mislukt')
       }
     }
 

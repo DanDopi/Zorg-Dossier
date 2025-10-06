@@ -155,6 +155,7 @@ export async function GET(request: Request) {
                 ? "given"
                 : "skipped"
               : "pending",
+            isOrphaned: false,
             administration: administration
               ? {
                   id: administration.id,
@@ -174,6 +175,54 @@ export async function GET(request: Request) {
         return []
       }
     })
+
+    // Find orphaned administrations (administrations that don't match current schedule times)
+    const matchedAdminIds = new Set(
+      schedule
+        .filter(s => s.administration)
+        .map(s => s.administration!.id)
+    )
+
+    const orphanedAdministrations = administrations
+      .filter(admin => !matchedAdminIds.has(admin.id))
+      .map(admin => {
+        const adminTime = new Date(admin.scheduledTime)
+        const timeStr = `${String(adminTime.getHours()).padStart(2, '0')}:${String(adminTime.getMinutes()).padStart(2, '0')}`
+
+        // Find the medication this administration belongs to
+        const medication = medications.find(m => m.id === admin.medicationId)
+
+        if (!medication) return null
+
+        return {
+          medication: {
+            id: medication.id,
+            name: medication.name,
+            dosage: medication.dosage,
+            unit: medication.unit,
+            instructions: medication.instructions,
+          },
+          scheduledTime: admin.scheduledTime.toISOString(),
+          time: timeStr,
+          status: admin.wasGiven ? "given" : "skipped",
+          isOrphaned: true,
+          administration: {
+            id: admin.id,
+            administeredAt: admin.administeredAt,
+            dosageGiven: admin.dosageGiven,
+            notes: admin.notes,
+            skipReason: admin.skipReason,
+            caregiver: {
+              name: admin.caregiver.name,
+              email: admin.caregiver.user.email,
+            },
+          },
+        }
+      })
+      .filter(item => item !== null)
+
+    // Combine schedule with orphaned administrations
+    schedule.push(...orphanedAdministrations)
 
     // Sort by scheduled time
     schedule.sort((a, b) => {

@@ -5,8 +5,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
+interface Invitation {
+  id: string
+  status: string
+  createdAt: string
+  client: {
+    name: string
+    user: {
+      email: string
+    }
+  }
+}
+
 export default function InvitationsPage() {
-  const [invitations, setInvitations] = useState<any[]>([])
+  const [invitations, setInvitations] = useState<Invitation[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [respondingTo, setRespondingTo] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -26,8 +38,8 @@ export default function InvitationsPage() {
 
       const data = await response.json()
       setInvitations(data.invitations || [])
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
     } finally {
       setIsLoading(false)
     }
@@ -49,11 +61,9 @@ export default function InvitationsPage() {
       })
 
       if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || "Kon niet reageren op uitnodiging")
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Kon niet reageren op uitnodiging")
       }
-
-      const data = await response.json()
 
       // Show success message
       setSuccess(accept
@@ -66,8 +76,8 @@ export default function InvitationsPage() {
 
       // Clear success message after 5 seconds
       setTimeout(() => setSuccess(null), 5000)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
     } finally {
       setRespondingTo(null)
     }
@@ -142,9 +152,6 @@ export default function InvitationsPage() {
                           <h4 className="font-semibold text-lg">{invitation.client.name}</h4>
                           <p className="text-sm text-muted-foreground">
                             📧 {invitation.client.user.email}
-                          </p>
-                          <p className="text-sm text-muted-foreground mt-1">
-                            📍 {invitation.client.address}
                           </p>
                           <p className="text-sm text-muted-foreground mt-2">
                             📅 Verzonden op: {new Date(invitation.createdAt).toLocaleDateString('nl-NL', {

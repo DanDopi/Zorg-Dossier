@@ -32,9 +32,26 @@ const caregiverProfileSchema = z.object({
   bio: z.string().optional(),
 })
 
+interface UserProfile {
+  id: string
+  email: string
+  role: 'CLIENT' | 'CAREGIVER' | 'ADMIN' | 'SUPER_ADMIN'
+  clientProfile?: {
+    name: string
+    dateOfBirth: string
+    address: string
+  } | null
+  caregiverProfile?: {
+    name: string
+    phoneNumber: string
+    address: string
+    bio?: string | null
+  } | null
+}
+
 export default function ProfilePage() {
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<UserProfile | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -75,14 +92,14 @@ export default function ProfilePage() {
           bio: data.caregiverProfile.bio || "",
         })
       }
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kon profiel niet laden')
     } finally {
       setIsLoading(false)
     }
   }
 
-  async function onSubmit(values: any) {
+  async function onSubmit(values: z.infer<typeof clientProfileSchema> | z.infer<typeof caregiverProfileSchema>) {
     setIsSaving(true)
     setError(null)
     setSuccess(false)
@@ -104,8 +121,8 @@ export default function ProfilePage() {
       await fetchProfile()
 
       setTimeout(() => setSuccess(false), 3000)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kon profiel niet bijwerken')
     } finally {
       setIsSaving(false)
     }

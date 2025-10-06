@@ -6,13 +6,71 @@ import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import DashboardLayout from "@/components/dashboard/DashboardLayout"
 
+interface User {
+  id: string
+  email: string
+}
+
+interface ClientProfile {
+  id: string
+  name: string
+  dateOfBirth: string
+  address: string
+  phoneNumber?: string
+  emergencyContact?: string
+  user: {
+    email: string
+  }
+}
+
+interface CaregiverProfile {
+  id: string
+  name: string
+  phoneNumber: string
+  address: string
+  bio?: string
+  user: {
+    email: string
+  }
+}
+
+interface ClientRelationship {
+  id: string
+  clientId: string
+  caregiverId: string
+  status: "ACTIVE" | "INACTIVE"
+  createdAt: string
+  deactivatedAt?: string | null
+  client: ClientProfile
+}
+
+interface Invitation {
+  id: string
+  clientId: string
+  caregiverId?: string | null
+  invitedEmail?: string | null
+  status: "PENDING" | "ACCEPTED" | "DECLINED"
+  createdAt: string
+  respondedAt?: string | null
+  client: ClientProfile
+}
+
+interface UserWithProfile {
+  id: string
+  email: string
+  role: string
+  caregiverProfile?: {
+    name: string
+  } | null
+}
+
 interface MijnClientenClientProps {
-  user: any
+  user: UserWithProfile
 }
 
 export default function MijnClientenClient({ user }: MijnClientenClientProps) {
-  const [clients, setClients] = useState<any[]>([])
-  const [invitations, setInvitations] = useState<any[]>([])
+  const [clients, setClients] = useState<ClientRelationship[]>([])
+  const [invitations, setInvitations] = useState<Invitation[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
@@ -46,8 +104,8 @@ export default function MijnClientenClient({ user }: MijnClientenClientProps) {
         console.warn("Could not fetch invitations:", invError)
         setInvitations([])
       }
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kon gegevens niet laden')
     } finally {
       setIsLoading(false)
     }
@@ -76,8 +134,8 @@ export default function MijnClientenClient({ user }: MijnClientenClientProps) {
 
       // Refresh data
       await fetchData()
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kon gegevens niet laden')
     } finally {
       setProcessingId(null)
     }

@@ -111,7 +111,6 @@ export async function POST(request: Request) {
     const newUser = await prisma.user.create({
       data: {
         email,
-        name: name || null,
         password: hashedPassword,
         role,
       },
@@ -122,12 +121,18 @@ export async function POST(request: Request) {
       await prisma.clientProfile.create({
         data: {
           userId: newUser.id,
+          name: name || "New Client",
+          dateOfBirth: new Date(),
+          address: "Update address",
         },
       })
     } else if (role === "CAREGIVER") {
       await prisma.caregiverProfile.create({
         data: {
           userId: newUser.id,
+          name: name || "New Caregiver",
+          phoneNumber: "Update phone",
+          address: "Update address",
         },
       })
     }

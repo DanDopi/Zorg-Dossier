@@ -6,13 +6,55 @@ import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import DashboardLayout from "@/components/dashboard/DashboardLayout"
 
+interface ClientProfile {
+  id: string
+  name: string
+  dateOfBirth: string
+  address: string
+  phoneNumber?: string
+  emergencyContact?: string
+  user: {
+    email: string
+  }
+}
+
+interface ClientRelationship {
+  id: string
+  clientId: string
+  caregiverId: string
+  status: "ACTIVE" | "INACTIVE"
+  createdAt: string
+  deactivatedAt?: string | null
+  client: ClientProfile
+}
+
+interface Invitation {
+  id: string
+  clientId: string
+  caregiverId?: string | null
+  invitedEmail?: string | null
+  status: "PENDING" | "ACCEPTED" | "DECLINED"
+  createdAt: string
+  respondedAt?: string | null
+  client: ClientProfile
+}
+
+interface UserWithProfile {
+  id: string
+  email: string
+  role: string
+  caregiverProfile?: {
+    name: string
+  } | null
+}
+
 interface MyClientsClientProps {
-  user: any
+  user: UserWithProfile
 }
 
 export default function MyClientsClient({ user }: MyClientsClientProps) {
-  const [clients, setClients] = useState<any[]>([])
-  const [invitations, setInvitations] = useState<any[]>([])
+  const [clients, setClients] = useState<ClientRelationship[]>([])
+  const [invitations, setInvitations] = useState<Invitation[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [processingId, setProcessingId] = useState<string | null>(null)
@@ -36,8 +78,8 @@ export default function MyClientsClient({ user }: MyClientsClientProps) {
         const invitationsData = await invitationsResponse.json()
         setInvitations(invitationsData.invitations || [])
       }
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kon gegevens niet laden')
     } finally {
       setIsLoading(false)
     }
@@ -66,8 +108,8 @@ export default function MyClientsClient({ user }: MyClientsClientProps) {
 
       // Refresh data
       await fetchData()
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kon gegevens niet laden')
     } finally {
       setProcessingId(null)
     }

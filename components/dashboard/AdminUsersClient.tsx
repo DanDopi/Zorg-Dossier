@@ -22,8 +22,14 @@ import {
 } from "@/components/ui/dialog"
 import { User } from "@prisma/client"
 
+interface UserWithProfile {
+  id: string
+  email: string
+  role: string
+}
+
 interface AdminUsersClientProps {
-  user: any
+  user: UserWithProfile
 }
 
 interface UserData {
@@ -32,8 +38,12 @@ interface UserData {
   name: string | null
   role: string
   createdAt: string
-  clientProfile?: any
-  caregiverProfile?: any
+  clientProfile?: {
+    name: string
+  } | null
+  caregiverProfile?: {
+    name: string
+  } | null
 }
 
 export default function AdminUsersClient({ user }: AdminUsersClientProps) {

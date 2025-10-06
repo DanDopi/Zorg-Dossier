@@ -171,6 +171,96 @@ export async function POST(request: Request) {
   }
 }
 
+// PUT - Update medication
+export async function PUT(request: Request) {
+  try {
+    const session = await auth()
+
+    if (!session?.user) {
+      return NextResponse.json(
+        { error: "Niet geautoriseerd" },
+        { status: 401 }
+      )
+    }
+
+    const body = await request.json()
+    const { id, name, dosage, unit, frequency, instructions, times, startDate, endDate, imageUrl } = body
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "Medicatie ID vereist" },
+        { status: 400 }
+      )
+    }
+
+    if (!name || !dosage || !unit || !frequency || !times || !Array.isArray(times)) {
+      return NextResponse.json(
+        { error: "Verplichte velden ontbreken" },
+        { status: 400 }
+      )
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      include: {
+        clientProfile: true,
+      },
+    })
+
+    if (!user) {
+      return NextResponse.json({ error: "Gebruiker niet gevonden" }, { status: 404 })
+    }
+
+    // Get the medication to check ownership
+    const medication = await prisma.medication.findUnique({
+      where: { id },
+    })
+
+    if (!medication) {
+      return NextResponse.json({ error: "Medicatie niet gevonden" }, { status: 404 })
+    }
+
+    // Check permissions
+    if (user.role === "CLIENT") {
+      if (!user.clientProfile || user.clientProfile.id !== medication.clientId) {
+        return NextResponse.json(
+          { error: "Geen toegang tot deze medicatie" },
+          { status: 403 }
+        )
+      }
+    } else if (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN") {
+      return NextResponse.json(
+        { error: "Alleen cliënten kunnen medicatie bewerken" },
+        { status: 403 }
+      )
+    }
+
+    // Update the medication
+    const updatedMedication = await prisma.medication.update({
+      where: { id },
+      data: {
+        name,
+        dosage,
+        unit,
+        frequency,
+        instructions: instructions || null,
+        times: JSON.stringify(times),
+        startDate: startDate ? new Date(startDate) : undefined,
+        endDate: endDate ? new Date(endDate) : null,
+        imageUrl: imageUrl && imageUrl.trim() ? imageUrl.trim() : null,
+      },
+    })
+
+    return NextResponse.json(updatedMedication)
+  } catch (error) {
+    console.error("Update medication error:", error)
+    return NextResponse.json(
+      { error: "Er is een fout opgetreden", details: error instanceof Error ? error.message : "Unknown error" },
+      { status: 500 }
+    )
+  }
+}
+
 // DELETE - Deactivate a medication
 export async function DELETE(request: Request) {
   try {

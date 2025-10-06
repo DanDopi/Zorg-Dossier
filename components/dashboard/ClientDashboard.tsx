@@ -1,18 +1,34 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { User } from "@prisma/client"
 import DashboardLayout from "./DashboardLayout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
+interface Report {
+  id: string
+  content: string
+  reportDate: string
+  createdAt?: string
+  images?: Array<{id: string}>
+  caregiver: {
+    name: string
+  }
+}
+
 interface ClientDashboardProps {
-  user: any // User with included profiles
+  user: {
+    email: string
+    role: string
+    clientProfile?: {
+      name: string
+    } | null
+  }
 }
 
 export default function ClientDashboard({ user }: ClientDashboardProps) {
-  const [recentReports, setRecentReports] = useState<any[]>([])
+  const [recentReports, setRecentReports] = useState<Report[]>([])
   const [isLoadingReports, setIsLoadingReports] = useState(true)
 
   useEffect(() => {

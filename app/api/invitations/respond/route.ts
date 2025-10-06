@@ -77,13 +77,15 @@ export async function POST(request: NextRequest) {
         })
 
         // Create caregiver-client relationship
-        await tx.caregiverClientRelationship.create({
-          data: {
-            caregiverId: invitation.caregiverId,
-            clientId: invitation.clientId,
-            status: "ACTIVE",
-          },
-        })
+        if (invitation.caregiverId) {
+          await tx.caregiverClientRelationship.create({
+            data: {
+              caregiverId: invitation.caregiverId,
+              clientId: invitation.clientId,
+              status: "ACTIVE",
+            },
+          })
+        }
       })
 
       return NextResponse.json(

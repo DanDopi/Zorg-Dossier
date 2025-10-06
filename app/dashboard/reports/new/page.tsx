@@ -9,12 +9,23 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import Link from "next/link"
 
+interface Client {
+  client: {
+    id: string
+    name: string
+    user: {
+      email: string
+    }
+  }
+  status: string
+}
+
 export default function NewReportPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const preselectedClient = searchParams.get("client")
 
-  const [clients, setClients] = useState<any[]>([])
+  const [clients, setClients] = useState<Client[]>([])
   const [isLoadingClients, setIsLoadingClients] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -34,7 +45,7 @@ export default function NewReportPage() {
       const response = await fetch("/api/my-clients")
       if (response.ok) {
         const data = await response.json()
-        const activeClients = (data.clients || []).filter((c: any) => c.status === "ACTIVE")
+        const activeClients = (data.clients || []).filter((c: Client) => c.status === "ACTIVE")
         setClients(activeClients)
       }
     } catch (error) {
@@ -99,8 +110,8 @@ export default function NewReportPage() {
 
       // Redirect to reports list
       router.push("/dashboard/reports")
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
     } finally {
       setIsSubmitting(false)
     }
@@ -169,7 +180,7 @@ export default function NewReportPage() {
                   >
                     <option value="">-- Selecteer een cliënt --</option>
                     {clients.map((client) => (
-                      <option key={client.clientId} value={client.clientId}>
+                      <option key={client.client.id} value={client.client.id}>
                         {client.client.name} ({client.client.user.email})
                       </option>
                     ))}

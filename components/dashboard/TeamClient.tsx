@@ -6,12 +6,43 @@ import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import DashboardLayout from "@/components/dashboard/DashboardLayout"
 
+interface CaregiverProfile {
+  id: string
+  name: string
+  phoneNumber: string
+  address: string
+  bio?: string
+  user: {
+    email: string
+  }
+}
+
+interface TeamMember {
+  id: string
+  caregiverId: string
+  clientId: string
+  status: "ACTIVE" | "INACTIVE"
+  createdAt: string
+  updatedAt: string
+  deactivatedAt?: string | null
+  caregiver: CaregiverProfile
+}
+
+interface UserWithProfile {
+  id: string
+  email: string
+  role: string
+  clientProfile?: {
+    name: string
+  } | null
+}
+
 interface TeamClientProps {
-  user: any
+  user: UserWithProfile
 }
 
 export default function TeamClient({ user }: TeamClientProps) {
-  const [team, setTeam] = useState<any[]>([])
+  const [team, setTeam] = useState<TeamMember[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
   const [activatingId, setActivatingId] = useState<string | null>(null)
@@ -31,8 +62,8 @@ export default function TeamClient({ user }: TeamClientProps) {
 
       const data = await response.json()
       setTeam(data.team || [])
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kon gegevens niet laden')
     } finally {
       setIsLoading(false)
     }
@@ -62,8 +93,8 @@ export default function TeamClient({ user }: TeamClientProps) {
 
       // Refresh team list
       await fetchTeam()
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kon gegevens niet laden')
     } finally {
       setDeactivatingId(null)
       setActivatingId(null)

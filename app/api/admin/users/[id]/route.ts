@@ -70,14 +70,28 @@ export async function PATCH(
       )
     }
 
-    // Update user
+    // Update user role
     const updatedUser = await prisma.user.update({
       where: { id },
       data: {
-        name,
         role,
       },
     })
+
+    // Update profile name if provided
+    if (name) {
+      if (userToUpdate.clientProfile) {
+        await prisma.clientProfile.update({
+          where: { userId: id },
+          data: { name },
+        })
+      } else if (userToUpdate.caregiverProfile) {
+        await prisma.caregiverProfile.update({
+          where: { userId: id },
+          data: { name },
+        })
+      }
+    }
 
     // Handle profile changes if role changed
     if (userToUpdate.role !== role) {
@@ -92,17 +106,23 @@ export async function PATCH(
         })
       }
 
-      // Create new profile
+      // Create new profile with default values
       if (role === "CLIENT") {
         await prisma.clientProfile.create({
           data: {
             userId: id,
+            name: name || "New Client",
+            dateOfBirth: new Date(),
+            address: "Update address",
           },
         })
       } else if (role === "CAREGIVER") {
         await prisma.caregiverProfile.create({
           data: {
             userId: id,
+            name: name || "New Caregiver",
+            phoneNumber: "Update phone",
+            address: "Update address",
           },
         })
       }

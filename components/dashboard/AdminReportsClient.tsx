@@ -3,8 +3,14 @@
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
+interface UserWithProfile {
+  id: string
+  email: string
+  role: string
+}
+
 interface AdminReportsClientProps {
-  user: any
+  user: UserWithProfile
 }
 
 interface ReportStats {

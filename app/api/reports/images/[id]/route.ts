@@ -76,7 +76,7 @@ export async function GET(
     }
 
     // Return image as binary data
-    return new NextResponse(image.imageData, {
+    return new NextResponse(Buffer.from(image.imageData), {
       status: 200,
       headers: {
         "Content-Type": image.mimeType,

@@ -5,9 +5,40 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
+interface Report {
+  id: string
+  content: string
+  reportDate: string
+  createdAt: string
+  images?: Array<{id: string}>
+  client: {
+    name: string
+    user: {
+      email: string
+    }
+  }
+  caregiver: {
+    name: string
+    user: {
+      email: string
+    }
+  }
+}
+
+interface Client {
+  client: {
+    id: string
+    name: string
+    user: {
+      email: string
+    }
+  }
+  status: string
+}
+
 export default function ReportsPage() {
-  const [reports, setReports] = useState<any[]>([])
-  const [clients, setClients] = useState<any[]>([])
+  const [reports, setReports] = useState<Report[]>([])
+  const [clients, setClients] = useState<Client[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedClient, setSelectedClient] = useState<string>("")
@@ -31,8 +62,8 @@ export default function ReportsPage() {
 
       const data = await response.json()
       setReports(data.reports || [])
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
     } finally {
       setIsLoading(false)
     }
@@ -43,7 +74,7 @@ export default function ReportsPage() {
       const response = await fetch("/api/my-clients")
       if (response.ok) {
         const data = await response.json()
-        const activeClients = (data.clients || []).filter((c: any) => c.status === "ACTIVE")
+        const activeClients = (data.clients || []).filter((c: Client) => c.status === "ACTIVE")
         setClients(activeClients)
       }
     } catch (error) {
@@ -118,7 +149,7 @@ export default function ReportsPage() {
                 >
                   <option value="">Alle cliënten</option>
                   {clients.map((client) => (
-                    <option key={client.clientId} value={client.clientId}>
+                    <option key={client.client.id} value={client.client.id}>
                       {client.client.name}
                     </option>
                   ))}

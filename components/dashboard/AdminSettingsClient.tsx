@@ -87,7 +87,7 @@ export default function AdminSettingsClient({ user }: AdminSettingsClientProps) 
     }
   }
 
-  const handleSaveSettings = async (section: string, category: string, settings: Record<string, any>) => {
+  const handleSaveSettings = async (section: string, category: string, settings: Record<string, string>) => {
     setIsSaving(true)
     setSuccessMessage("")
     setErrorMessage("")

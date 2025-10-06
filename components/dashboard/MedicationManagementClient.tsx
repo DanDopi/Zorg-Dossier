@@ -19,6 +19,7 @@ interface ScheduleItem {
   scheduledTime: string
   time: string
   status: "pending" | "given" | "skipped"
+  isOrphaned?: boolean
   administration?: {
     id: string
     administeredAt: string
@@ -52,6 +53,8 @@ interface Medication {
   instructions?: string
   times: string
   isActive: boolean
+  startDate?: Date | null
+  endDate?: Date | null
   imageUrl?: string | null
 }
 
@@ -62,10 +65,21 @@ interface User {
   clientProfile?: {
     id: string
     name: string
-  }
+    userId?: string
+    createdAt?: Date
+    updatedAt?: Date
+    dateOfBirth?: Date
+    address?: string
+  } | null
   caregiverProfile?: {
     id: string
     name: string
+    userId?: string
+    createdAt?: Date
+    updatedAt?: Date
+    phoneNumber?: string
+    address?: string
+    bio?: string | null
     clientRelationships: Array<{
       client: {
         id: string
@@ -75,7 +89,7 @@ interface User {
         }
       }
     }>
-  }
+  } | null
 }
 
 interface MedicationManagementClientProps {
@@ -98,11 +112,29 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
     frequency: "daily",
     instructions: "",
     times: ["08:00"],
+    startDate: "",
     endDate: "",
     imageUrl: "",
   })
   const [selectedImage, setSelectedImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+
+  // Edit medication dialog state
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [editingMedication, setEditingMedication] = useState<Medication | null>(null)
+  const [editMedicationForm, setEditMedicationForm] = useState({
+    name: "",
+    dosage: "",
+    unit: "mg",
+    frequency: "daily",
+    instructions: "",
+    times: ["08:00"],
+    startDate: "",
+    endDate: "",
+    imageUrl: "",
+  })
+  const [editSelectedImage, setEditSelectedImage] = useState<File | null>(null)
+  const [editImagePreview, setEditImagePreview] = useState<string | null>(null)
 
   // Image view dialog state
   const [imageViewDialogOpen, setImageViewDialogOpen] = useState(false)
@@ -118,6 +150,7 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
   const isClient = user.role === "CLIENT"
   const isCaregiver = user.role === "CAREGIVER"
   const isToday = selectedDate === new Date().toISOString().split("T")[0]
+  const isTodayOrPast = selectedDate <= new Date().toISOString().split("T")[0]
 
   useEffect(() => {
     if (isCaregiver && user.caregiverProfile?.clientRelationships.length) {
@@ -201,6 +234,7 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
           frequency: "daily",
           instructions: "",
           times: ["08:00"],
+          startDate: "",
           endDate: "",
           imageUrl: "",
         })
@@ -239,6 +273,32 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
       const reader = new FileReader()
       reader.onloadend = () => {
         setImagePreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  function handleEditImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        alert('Selecteer een geldig afbeeldingsbestand')
+        return
+      }
+
+      // Validate file size (max 2MB for base64 storage)
+      if (file.size > 2 * 1024 * 1024) {
+        alert('Afbeelding is te groot. Maximaal 2MB toegestaan.')
+        return
+      }
+
+      setEditSelectedImage(file)
+
+      // Create preview
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setEditImagePreview(reader.result as string)
       }
       reader.readAsDataURL(file)
     }
@@ -297,6 +357,100 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
     } catch (error) {
       console.error("Error deleting medication:", error)
       alert("Er is een fout opgetreden")
+    }
+  }
+
+  function openEditDialog(medication: Medication) {
+    setEditingMedication(medication)
+    setEditMedicationForm({
+      name: medication.name,
+      dosage: medication.dosage,
+      unit: medication.unit,
+      frequency: medication.frequency,
+      instructions: medication.instructions || "",
+      times: JSON.parse(medication.times),
+      startDate: medication.startDate ? new Date(medication.startDate).toISOString().split("T")[0] : "",
+      endDate: medication.endDate ? new Date(medication.endDate).toISOString().split("T")[0] : "",
+      imageUrl: medication.imageUrl || "",
+    })
+    setEditImagePreview(medication.imageUrl || null)
+    setEditSelectedImage(null)
+    setIsEditDialogOpen(true)
+  }
+
+  async function handleUpdateMedication() {
+    if (!editingMedication) return
+
+    try {
+      let finalImageUrl = editMedicationForm.imageUrl
+
+      // If user uploaded a new file, convert to base64 data URL
+      if (editSelectedImage) {
+        finalImageUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onloadend = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(editSelectedImage)
+        })
+      }
+
+      const response = await fetch("/api/medications", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingMedication.id,
+          ...editMedicationForm,
+          imageUrl: finalImageUrl,
+        }),
+      })
+
+      if (response.ok) {
+        setIsEditDialogOpen(false)
+        setEditingMedication(null)
+        setEditMedicationForm({
+          name: "",
+          dosage: "",
+          unit: "mg",
+          frequency: "daily",
+          instructions: "",
+          times: ["08:00"],
+          startDate: "",
+          endDate: "",
+          imageUrl: "",
+        })
+        setEditSelectedImage(null)
+        setEditImagePreview(null)
+        loadData()
+      } else {
+        const error = await response.json()
+        console.error("API Error:", error)
+        alert(error.error || "Fout bij bijwerken medicatie")
+      }
+    } catch (error) {
+      console.error("Error updating medication:", error)
+      alert("Er is een fout opgetreden")
+    }
+  }
+
+  function addEditTimeSlot() {
+    setEditMedicationForm({
+      ...editMedicationForm,
+      times: [...editMedicationForm.times, "12:00"],
+    })
+  }
+
+  function updateEditTimeSlot(index: number, value: string) {
+    const newTimes = [...editMedicationForm.times]
+    newTimes[index] = value
+    setEditMedicationForm({ ...editMedicationForm, times: newTimes })
+  }
+
+  function removeEditTimeSlot(index: number) {
+    if (editMedicationForm.times.length > 1) {
+      setEditMedicationForm({
+        ...editMedicationForm,
+        times: editMedicationForm.times.filter((_, i) => i !== index),
+      })
     }
   }
 
@@ -472,6 +626,18 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
                   </div>
 
                   <div className="grid gap-2">
+                    <Label htmlFor="startDate">Startdatum (optioneel)</Label>
+                    <Input
+                      id="startDate"
+                      type="date"
+                      value={newMedication.startDate}
+                      onChange={(e) =>
+                        setNewMedication({ ...newMedication, startDate: e.target.value })
+                      }
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
                     <Label htmlFor="endDate">Einddatum (optioneel)</Label>
                     <Input
                       id="endDate"
@@ -627,7 +793,14 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
                         {item.time}
                       </div>
                       <div className="flex-1">
-                        <div className="font-medium text-lg">{item.medication.name}</div>
+                        <div className="font-medium text-lg">
+                          {item.medication.name}
+                          {item.isOrphaned && (
+                            <span className="ml-2 text-xs font-normal text-orange-600 bg-orange-50 px-2 py-1 rounded">
+                              Vorig schema
+                            </span>
+                          )}
+                        </div>
                         <div className="text-sm text-muted-foreground">
                           {item.medication.dosage} {item.medication.unit}
                           {item.medication.instructions && ` - ${item.medication.instructions}`}
@@ -656,7 +829,7 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
                         )}
                       </div>
                     </div>
-                    {isCaregiver && item.status === "pending" && isToday && (
+                    {isCaregiver && item.status === "pending" && isTodayOrPast && (
                       <Button
                         onClick={() => {
                           setSelectedScheduleItem(item)
@@ -666,9 +839,9 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
                         Registreer
                       </Button>
                     )}
-                    {item.status === "pending" && !isToday && (
+                    {item.status === "pending" && !isTodayOrPast && (
                       <span className="text-muted-foreground text-sm">
-                        Niet toegediend
+                        Toekomstige medicatie
                       </span>
                     )}
                   </div>
@@ -720,6 +893,13 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
                           Afbeelding
                         </Button>
                       )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openEditDialog(med)}
+                      >
+                        Bewerk
+                      </Button>
                       <Button
                         variant="destructive"
                         size="sm"
@@ -789,6 +969,176 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
               Annuleren
             </Button>
             <Button onClick={handleAdministerMedication}>Registreren</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit medication dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Medicatie Bewerken</DialogTitle>
+            <DialogDescription>
+              Wijzig de gegevens van {editingMedication?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-name">Medicijnnaam *</Label>
+              <Input
+                id="edit-name"
+                value={editMedicationForm.name}
+                onChange={(e) =>
+                  setEditMedicationForm({ ...editMedicationForm, name: e.target.value })
+                }
+                placeholder="Bijv. Paracetamol"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-dosage">Dosering *</Label>
+                <Input
+                  id="edit-dosage"
+                  value={editMedicationForm.dosage}
+                  onChange={(e) =>
+                    setEditMedicationForm({ ...editMedicationForm, dosage: e.target.value })
+                  }
+                  placeholder="Bijv. 500"
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="edit-unit">Eenheid *</Label>
+                <Select
+                  value={editMedicationForm.unit}
+                  onValueChange={(value) =>
+                    setEditMedicationForm({ ...editMedicationForm, unit: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mg">mg</SelectItem>
+                    <SelectItem value="ml">ml</SelectItem>
+                    <SelectItem value="tabletten">tabletten</SelectItem>
+                    <SelectItem value="druppels">druppels</SelectItem>
+                    <SelectItem value="stuks">stuks</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="edit-frequency">Frequentie *</Label>
+              <Select
+                value={editMedicationForm.frequency}
+                onValueChange={(value) =>
+                  setEditMedicationForm({ ...editMedicationForm, frequency: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="daily">Dagelijks</SelectItem>
+                  <SelectItem value="twice-daily">2x per dag</SelectItem>
+                  <SelectItem value="three-times-daily">3x per dag</SelectItem>
+                  <SelectItem value="weekly">Wekelijks</SelectItem>
+                  <SelectItem value="as-needed">Zo nodig</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Tijdstippen *</Label>
+              {editMedicationForm.times.map((time, index) => (
+                <div key={index} className="flex gap-2">
+                  <Input
+                    type="time"
+                    value={time}
+                    onChange={(e) => updateEditTimeSlot(index, e.target.value)}
+                  />
+                  {editMedicationForm.times.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => removeEditTimeSlot(index)}
+                    >
+                      Verwijder
+                    </Button>
+                  )}
+                </div>
+              ))}
+              <Button type="button" variant="outline" onClick={addEditTimeSlot}>
+                + Tijdstip Toevoegen
+              </Button>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="edit-instructions">Instructies</Label>
+              <Input
+                id="edit-instructions"
+                value={editMedicationForm.instructions}
+                onChange={(e) =>
+                  setEditMedicationForm({ ...editMedicationForm, instructions: e.target.value })
+                }
+                placeholder="Bijv. Innemen met voedsel"
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="edit-startDate">Startdatum (optioneel)</Label>
+              <Input
+                id="edit-startDate"
+                type="date"
+                value={editMedicationForm.startDate}
+                onChange={(e) =>
+                  setEditMedicationForm({ ...editMedicationForm, startDate: e.target.value })
+                }
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="edit-endDate">Einddatum (optioneel)</Label>
+              <Input
+                id="edit-endDate"
+                type="date"
+                value={editMedicationForm.endDate}
+                onChange={(e) =>
+                  setEditMedicationForm({ ...editMedicationForm, endDate: e.target.value })
+                }
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="edit-imageFile">Afbeelding (optioneel)</Label>
+              <Input
+                id="edit-imageFile"
+                type="file"
+                accept="image/*"
+                onChange={handleEditImageSelect}
+              />
+              {editImagePreview && (
+                <div className="mt-2">
+                  <img
+                    src={editImagePreview}
+                    alt="Medicatie voorbeeld"
+                    className="max-w-xs max-h-40 object-contain border rounded"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none'
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+              Annuleren
+            </Button>
+            <Button onClick={handleUpdateMedication}>Opslaan</Button>
           </div>
         </DialogContent>
       </Dialog>

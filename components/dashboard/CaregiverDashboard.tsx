@@ -7,14 +7,43 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
+interface UserWithProfile {
+  id: string
+  email: string
+  role: string
+  caregiverProfile?: {
+    name: string
+  } | null
+}
+
+interface Invitation {
+  id: string
+  status: string
+}
+
+interface ReportData {
+  id: string
+  content: string
+  reportDate: string
+  createdAt: string
+  client: {
+    name: string
+  }
+  images?: Array<{ id: string }>
+}
+
 interface CaregiverDashboardProps {
-  user: any // User with included profiles
+  user: UserWithProfile & {
+    caregiverProfile?: {
+      name: string
+    } | null
+  }
 }
 
 export default function CaregiverDashboard({ user }: CaregiverDashboardProps) {
-  const [invitations, setInvitations] = useState<any[]>([])
+  const [invitations, setInvitations] = useState<Invitation[]>([])
   const [isLoadingInvitations, setIsLoadingInvitations] = useState(true)
-  const [recentReports, setRecentReports] = useState<any[]>([])
+  const [recentReports, setRecentReports] = useState<ReportData[]>([])
   const [isLoadingReports, setIsLoadingReports] = useState(true)
 
   useEffect(() => {
@@ -161,7 +190,7 @@ export default function CaregiverDashboard({ user }: CaregiverDashboardProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
                 <p>Nog geen rapportages gemaakt</p>
-                <p className="text-sm mt-2">Klik op "Nieuw Rapport" om te beginnen</p>
+                <p className="text-sm mt-2">Klik op &quot;Nieuw Rapport&quot; om te beginnen</p>
               </div>
             ) : (
               <div className="space-y-3">

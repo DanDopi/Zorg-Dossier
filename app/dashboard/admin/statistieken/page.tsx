@@ -24,7 +24,7 @@ export default async function AdminReportsPage() {
   }
 
   return (
-    <DashboardLayout userName={user.name || user.email} userRole={user.role}>
+    <DashboardLayout userName={user.email} userRole={user.role}>
       <AdminReportsClient user={user} />
     </DashboardLayout>
   )

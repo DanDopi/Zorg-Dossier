@@ -26,7 +26,10 @@
       "Bash(npx prisma migrate dev:*)",
       "Bash(npm run setup:superadmin:*)",
       "Bash(npm run build:*)",
-      "Bash(Get-Content .next/server/app/api/medications/route.js -Tail 50)"
+      "Bash(Get-Content .next/server/app/api/medications/route.js -Tail 50)",
+      "Bash(find:*)",
+      "Bash(npx tsc:*)",
+      "Bash(Select-String -Pattern \"Failed to compile|Compiled successfully|✓ Compiled|✓ Linting and checking|Type error\" -Context 0,2)"
     ],
     "deny": [],
     "ask": []

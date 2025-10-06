@@ -157,7 +157,14 @@ export async function GET(request: Request) {
     }
 
     // Build where clause based on user role
-    let whereClause: any = {}
+    const whereClause: {
+      medicationId?: string
+      scheduledTime?: {
+        gte?: Date
+        lte?: Date
+      }
+      clientId?: string
+    } = {}
 
     if (medicationId) {
       whereClause.medicationId = medicationId

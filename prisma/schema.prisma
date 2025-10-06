@@ -72,6 +72,11 @@ model ClientProfile {
   medications   Medication[]
   medicationAdministrations MedicationAdministration[]
 
+  // I&O (Intake & Output) records for this client
+  defecationRecords   DefecationRecord[]
+  urineRecords        UrineRecord[]
+  fluidIntakeRecords  FluidIntakeRecord[]
+
   // Family relationships (future feature)
   familyMembers FamilyClientRelationship[]
 
@@ -102,6 +107,11 @@ model CaregiverProfile {
 
   // Medication administrations by this caregiver
   medicationAdministrations MedicationAdministration[]
+
+  // I&O records created by this caregiver
+  defecationRecords   DefecationRecord[]
+  urineRecords        UrineRecord[]
+  fluidIntakeRecords  FluidIntakeRecord[]
 
   @@index([userId])
   @@index([name])
@@ -332,4 +342,79 @@ model MedicationAdministration {
   @@index([caregiverId])
   @@index([scheduledTime])
   @@index([administeredAt])
+}
+
+// I&O (Intake & Output) Management
+model DefecationRecord {
+  id              String   @id @default(cuid())
+
+  clientId        String
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  caregiverId     String
+  caregiver       CaregiverProfile @relation(fields: [caregiverId], references: [id], onDelete: Cascade)
+
+  recordDate      DateTime // The date of the defecation
+  recordTime      DateTime // The time of the defecation
+
+  amount          String?  // e.g., "none", "little", "normal", "alot"
+  consistency     String?  // e.g., "normal", "diarrhea", "constipation"
+  notes           String?  @db.Text
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([caregiverId])
+  @@index([recordDate])
+  @@index([clientId, recordDate])
+}
+
+model UrineRecord {
+  id              String   @id @default(cuid())
+
+  clientId        String
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  caregiverId     String
+  caregiver       CaregiverProfile @relation(fields: [caregiverId], references: [id], onDelete: Cascade)
+
+  recordDate      DateTime // The date of the urination
+  recordTime      DateTime // The time of the urination
+
+  volume          Int      // Volume in ml
+  notes           String?  @db.Text
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([caregiverId])
+  @@index([recordDate])
+  @@index([clientId, recordDate])
+}
+
+model FluidIntakeRecord {
+  id              String   @id @default(cuid())
+
+  clientId        String
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  caregiverId     String
+  caregiver       CaregiverProfile @relation(fields: [caregiverId], references: [id], onDelete: Cascade)
+
+  recordDate      DateTime // The date of the fluid intake
+  recordTime      DateTime // The time of the fluid intake
+
+  volume          Int      // Volume in ml
+  fluidType       String?  // e.g., "water", "coffee", "tea", "juice"
+  notes           String?  @db.Text
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([caregiverId])
+  @@index([recordDate])
+  @@index([clientId, recordDate])
 }

@@ -7,8 +7,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
+interface UserWithProfile {
+  id: string
+  email: string
+  role: string
+  clientProfile?: {
+    name: string
+  } | null
+  caregiverProfile?: {
+    name: string
+  } | null
+}
+
 interface AdminDashboardProps {
-  user: any // User with included profiles
+  user: UserWithProfile
 }
 
 interface Stats {

@@ -1,18 +1,43 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
 
+interface SearchResult {
+  id: string
+  name: string
+  phoneNumber: string
+  address: string
+  bio?: string | null
+  alreadyInvited?: boolean
+  alreadyInTeam?: boolean
+  user: {
+    email: string
+  }
+}
+
+interface Invitation {
+  id: string
+  status: string
+  invitedEmail?: string
+  createdAt?: string
+  respondedAt?: string
+  caregiver?: {
+    name: string
+    user: {
+      email: string
+    }
+  }
+}
+
 export default function InviteCaregiverPage() {
-  const router = useRouter()
   const [tab, setTab] = useState<"search" | "email">("search") // Search existing or invite by email
   const [searchQuery, setSearchQuery] = useState("")
-  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
   const [invitingId, setInvitingId] = useState<string | null>(null)
@@ -24,8 +49,7 @@ export default function InviteCaregiverPage() {
   const [isInvitingByEmail, setIsInvitingByEmail] = useState(false)
 
   // Invitations management
-  const [invitations, setInvitations] = useState<any[]>([])
-  const [isLoadingInvitations, setIsLoadingInvitations] = useState(true)
+  const [invitations, setInvitations] = useState<Invitation[]>([])
   const [managingInvitationId, setManagingInvitationId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -41,8 +65,6 @@ export default function InviteCaregiverPage() {
       }
     } catch (error) {
       console.error("Failed to fetch invitations:", error)
-    } finally {
-      setIsLoadingInvitations(false)
     }
   }
 
@@ -74,8 +96,8 @@ export default function InviteCaregiverPage() {
 
       // Clear success message after 5 seconds
       setTimeout(() => setSuccess(null), 5000)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
     } finally {
       setManagingInvitationId(null)
     }
@@ -103,8 +125,8 @@ export default function InviteCaregiverPage() {
       const data = await response.json()
       setSearchResults(data.caregivers || [])
       setHasSearched(true)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
     } finally {
       setIsSearching(false)
     }
@@ -134,8 +156,8 @@ export default function InviteCaregiverPage() {
       setSearchResults(prev => prev.filter(c => c.id !== caregiverId))
 
       setTimeout(() => setSuccess(null), 5000)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
     } finally {
       setInvitingId(null)
     }
@@ -170,8 +192,8 @@ export default function InviteCaregiverPage() {
       setEmailToInvite("")
 
       setTimeout(() => setSuccess(null), 7000)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Er is een fout opgetreden')
     } finally {
       setIsInvitingByEmail(false)
     }
@@ -406,9 +428,11 @@ export default function InviteCaregiverPage() {
                               </p>
                             </>
                           )}
-                          <p className="text-xs text-muted-foreground mt-2">
-                            Verzonden: {new Date(invitation.createdAt).toLocaleDateString('nl-NL')}
-                          </p>
+                          {invitation.createdAt && (
+                            <p className="text-xs text-muted-foreground mt-2">
+                              Verzonden: {new Date(invitation.createdAt).toLocaleDateString('nl-NL')}
+                            </p>
+                          )}
                           <p className="text-xs text-yellow-600 font-medium mt-1">
                             ⏳ In afwachting van antwoord
                           </p>

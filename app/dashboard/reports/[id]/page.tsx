@@ -9,12 +9,38 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
 
+interface ReportImage {
+  id: string
+  fileName: string
+}
+
+interface Report {
+  id: string
+  content: string
+  reportDate: string
+  createdAt: string
+  updatedAt: string
+  client: {
+    name: string
+    user: {
+      email: string
+    }
+  }
+  caregiver: {
+    name: string
+    user: {
+      email: string
+    }
+  }
+  images: ReportImage[]
+}
+
 export default function ReportDetailPage() {
   const params = useParams()
   const router = useRouter()
   const reportId = params.id as string
 
-  const [report, setReport] = useState<any>(null)
+  const [report, setReport] = useState<Report | null>(null)
   const [canEdit, setCanEdit] = useState(false)
   const [viewerRole, setViewerRole] = useState<string>("")
   const [isLoading, setIsLoading] = useState(true)
@@ -51,8 +77,8 @@ export default function ReportDetailPage() {
       setViewerRole(data.viewerRole || "")
       setEditContent(data.report.content)
       setEditReportDate(new Date(data.report.reportDate).toISOString().split('T')[0])
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kon rapport niet laden')
     } finally {
       setIsLoading(false)
     }
@@ -113,8 +139,8 @@ export default function ReportDetailPage() {
 
       // Clear success message after 5 seconds
       setTimeout(() => setSuccess(null), 5000)
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kon rapport niet bijwerken')
     } finally {
       setIsSaving(false)
     }
@@ -122,8 +148,10 @@ export default function ReportDetailPage() {
 
   function handleCancelEdit() {
     setIsEditing(false)
-    setEditContent(report.content)
-    setEditReportDate(new Date(report.reportDate).toISOString().split('T')[0])
+    if (report) {
+      setEditContent(report.content)
+      setEditReportDate(new Date(report.reportDate).toISOString().split('T')[0])
+    }
     setNewImages([null, null, null])
     setDeleteExistingImages(false)
     setError(null)
@@ -189,7 +217,7 @@ export default function ReportDetailPage() {
           </div>
         )}
 
-        <Card className="mb-6">
+        {report && (<Card className="mb-6">
           <CardHeader>
             <div className="flex items-start justify-between">
               <div className="flex-1">
@@ -275,7 +303,7 @@ export default function ReportDetailPage() {
                   <div>
                     <h3 className="text-lg font-semibold mb-3">Afbeeldingen</h3>
                     <div className="grid md:grid-cols-3 gap-4">
-                      {report.images.map((image: any) => (
+                      {report.images.map((image) => (
                         <div
                           key={image.id}
                           className="border rounded-lg overflow-hidden cursor-pointer hover:shadow-lg transition-shadow"
@@ -333,7 +361,7 @@ export default function ReportDetailPage() {
                     <div>
                       <Label>Huidige Afbeeldingen</Label>
                       <div className="grid md:grid-cols-3 gap-4 mt-2 mb-3">
-                        {report.images.map((image: any) => (
+                        {report.images.map((image) => (
                           <div key={image.id} className="border rounded-lg overflow-hidden">
                             <img
                               src={`/api/reports/images/${image.id}`}
@@ -417,7 +445,7 @@ export default function ReportDetailPage() {
               </>
             )}
           </CardContent>
-        </Card>
+        </Card>)}
       </main>
 
       {/* Image Modal */}

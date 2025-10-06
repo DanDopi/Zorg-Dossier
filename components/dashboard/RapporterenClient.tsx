@@ -6,12 +6,62 @@ import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import DashboardLayout from "@/components/dashboard/DashboardLayout"
 
+interface ClientProfile {
+  id: string
+  name: string
+  user: {
+    email: string
+  }
+}
+
+interface CaregiverProfile {
+  id: string
+  name: string
+  user: {
+    email: string
+  }
+}
+
+interface CareReportImage {
+  id: string
+  reportId: string
+  mimeType: string
+  fileName: string
+  fileSize: number
+  createdAt: string
+}
+
+interface CareReport {
+  id: string
+  caregiverId: string
+  clientId: string
+  content: string
+  reportDate: string
+  createdAt: string
+  updatedAt: string
+  client: ClientProfile
+  caregiver: CaregiverProfile
+  images?: CareReportImage[]
+}
+
+interface UserWithProfile {
+  id: string
+  email: string
+  role: string
+  clientProfile?: {
+    name: string
+  } | null
+  caregiverProfile?: {
+    name: string
+  } | null
+}
+
 interface RapporterenClientProps {
-  user: any
+  user: UserWithProfile
 }
 
 export default function RapporterenClient({ user }: RapporterenClientProps) {
-  const [reports, setReports] = useState<any[]>([])
+  const [reports, setReports] = useState<CareReport[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -29,8 +79,8 @@ export default function RapporterenClient({ user }: RapporterenClientProps) {
 
       const data = await response.json()
       setReports(data.reports || [])
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kon rapporten niet laden')
     } finally {
       setIsLoading(false)
     }
