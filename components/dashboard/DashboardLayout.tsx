@@ -205,33 +205,6 @@ function DashboardLayoutContent({ children, userName, userRole, clients }: Dashb
 
         {/* Main Content */}
         <main className={`flex-1 ${showSidebar ? "" : "container mx-auto"} px-4 py-8`}>
-          {/* Warning Banner for Caregivers */}
-          {isCaregiver && selectedClient && (
-            <div className="mb-4 bg-blue-100 border-2 border-blue-400 rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <div className="flex-1">
-                  <p className="font-bold text-blue-900">Actieve Cliënt:</p>
-                  <p className="text-blue-800">{selectedClient.name} ({selectedClient.email})</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Warning if no client selected */}
-          {isCaregiver && !selectedClient && clients && clients.length > 0 && (
-            <div className="mb-4 bg-yellow-100 border-2 border-yellow-400 rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
-                <p className="font-medium text-yellow-900">Selecteer eerst een cliënt in de bovenste balk om te beginnen met werken.</p>
-              </div>
-            </div>
-          )}
-
           {children}
         </main>
       </div>
