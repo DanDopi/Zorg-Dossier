@@ -41,3 +41,6 @@ prisma/migrations
 
 # claude settings
 .claude/settings.local.json
+
+# Windows special files
+nul
