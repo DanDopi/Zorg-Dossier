@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -34,7 +34,7 @@ const caregiverRegistrationSchema = z.object({
 
 type CaregiverRegistrationFormValues = z.infer<typeof caregiverRegistrationSchema>
 
-export default function CaregiverRegistrationPage() {
+function CaregiverRegistrationForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [error, setError] = useState<string | null>(null)
@@ -327,5 +327,13 @@ export default function CaregiverRegistrationPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function CaregiverRegistrationPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Laden...</div>}>
+      <CaregiverRegistrationForm />
+    </Suspense>
   )
 }

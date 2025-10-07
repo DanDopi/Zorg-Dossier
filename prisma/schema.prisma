@@ -77,6 +77,11 @@ model ClientProfile {
   urineRecords        UrineRecord[]
   fluidIntakeRecords  FluidIntakeRecord[]
 
+  // Nutrition (Voeding) records for this client
+  mealRecords               MealRecord[]
+  tubeFeedingSchedules      TubeFeedingSchedule[]
+  tubeFeedingAdministrations TubeFeedingAdministration[]
+
   // Family relationships (future feature)
   familyMembers FamilyClientRelationship[]
 
@@ -112,6 +117,10 @@ model CaregiverProfile {
   defecationRecords   DefecationRecord[]
   urineRecords        UrineRecord[]
   fluidIntakeRecords  FluidIntakeRecord[]
+
+  // Nutrition (Voeding) records created by this caregiver
+  mealRecords               MealRecord[]
+  tubeFeedingAdministrations TubeFeedingAdministration[]
 
   @@index([userId])
   @@index([name])
@@ -417,4 +426,94 @@ model FluidIntakeRecord {
   @@index([caregiverId])
   @@index([recordDate])
   @@index([clientId, recordDate])
+}
+
+// Nutrition (Voeding) Management
+model MealRecord {
+  id              String   @id @default(cuid())
+
+  clientId        String
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  caregiverId     String
+  caregiver       CaregiverProfile @relation(fields: [caregiverId], references: [id], onDelete: Cascade)
+
+  recordDate      DateTime // The date of the meal
+  recordTime      DateTime // The time of the meal
+
+  mealType        String   // "breakfast", "lunch", "dinner", "snack"
+  description     String   @db.Text // What was eaten
+  amount          String?  // e.g., "none", "little", "normal", "much"
+  notes           String?  @db.Text
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([caregiverId])
+  @@index([recordDate])
+  @@index([clientId, recordDate])
+}
+
+model TubeFeedingSchedule {
+  id              String   @id @default(cuid())
+
+  clientId        String
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  feedingTime     String   // e.g., "08:00"
+  volume          Int      // Volume in ml
+  feedSpeed       Int      // Speed in ml/hour
+  feedType        String?  // Type of nutrition formula
+
+  // Recurrence settings
+  recurrenceType  String   @default("daily") // "daily", "weekly", "specific_days", "one_time"
+  daysOfWeek      String?  // JSON array: ["monday", "wednesday", "friday"] for weekly schedules
+  startDate       DateTime @default(now()) // When schedule becomes active
+  endDate         DateTime? // Optional end date for temporary schedules
+
+  isActive        Boolean  @default(true)
+  createdBy       String   // User ID who created this schedule
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Administrations of this feeding
+  administrations TubeFeedingAdministration[]
+
+  @@index([clientId])
+  @@index([isActive])
+  @@index([recurrenceType])
+  @@index([clientId, isActive])
+}
+
+model TubeFeedingAdministration {
+  id              String   @id @default(cuid())
+
+  scheduleId      String
+  schedule        TubeFeedingSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  clientId        String
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  caregiverId     String
+  caregiver       CaregiverProfile @relation(fields: [caregiverId], references: [id], onDelete: Cascade)
+
+  scheduledTime   DateTime // When feeding should have been given
+  administeredAt  DateTime @default(now()) // When it was actually given
+
+  volumeGiven     Int      // Actual volume given (might differ from scheduled)
+  speedUsed       Int      // Actual speed used
+  notes           String?  @db.Text // Any notes about this administration
+
+  wasGiven        Boolean  @default(true) // false if feeding was skipped
+  skipReason      String?  // Reason if wasGiven is false
+
+  createdAt       DateTime @default(now())
+
+  @@index([scheduleId])
+  @@index([clientId])
+  @@index([caregiverId])
+  @@index([scheduledTime])
+  @@index([administeredAt])
 }

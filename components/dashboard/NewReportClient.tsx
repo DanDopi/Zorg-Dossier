@@ -114,9 +114,8 @@ export default function NewReportClient({ activeClients }: NewReportClientProps)
   const selectedClientName = activeClients.find(c => c.client.id === clientId)?.client.name
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="max-w-3xl mx-auto">
-        <Card>
+    <div className="max-w-3xl mx-auto">
+      <Card>
           <CardHeader>
             <CardTitle className="text-2xl">Nieuw Zorgrapport</CardTitle>
             <CardDescription>
@@ -140,42 +139,22 @@ export default function NewReportClient({ activeClients }: NewReportClientProps)
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Client Selection - Show selected client name prominently */}
+                {/* Client Selection - Read-only, use global selector */}
                 <div>
                   <Label htmlFor="client">Cliënt *</Label>
                   {clientId && selectedClientName ? (
                     <div className="mt-2 p-3 bg-blue-50 border-2 border-blue-200 rounded-md">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-semibold text-blue-900">{selectedClientName}</p>
-                          <p className="text-sm text-blue-700">Geselecteerd via global selector</p>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setClientId("")}
-                          className="text-xs"
-                        >
-                          Wijzig
-                        </Button>
+                      <div>
+                        <p className="font-semibold text-blue-900">{selectedClientName}</p>
+                        <p className="text-sm text-blue-700">Geselecteerd via global selector</p>
                       </div>
                     </div>
                   ) : (
-                    <select
-                      id="client"
-                      value={clientId}
-                      onChange={(e) => setClientId(e.target.value)}
-                      className="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    >
-                      <option value="">-- Selecteer een cliënt --</option>
-                      {activeClients.map((client) => (
-                        <option key={client.client.id} value={client.client.id}>
-                          {client.client.name} ({client.client.user.email})
-                        </option>
-                      ))}
-                    </select>
+                    <div className="mt-2 p-3 bg-amber-50 border-2 border-amber-200 rounded-md">
+                      <p className="text-sm text-amber-800">
+                        Selecteer een cliënt via de global selector bovenaan de pagina
+                      </p>
+                    </div>
                   )}
                 </div>
 
@@ -268,7 +247,6 @@ export default function NewReportClient({ activeClients }: NewReportClientProps)
             )}
           </CardContent>
         </Card>
-      </div>
     </div>
   )
 }

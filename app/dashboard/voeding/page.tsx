@@ -2,9 +2,9 @@ import { redirect } from "next/navigation"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import DashboardLayout from "@/components/dashboard/DashboardLayout"
-import ReportsListClient from "@/components/dashboard/ReportsListClient"
+import VoedingClient from "@/components/dashboard/VoedingClient"
 
-export default async function ReportsPage() {
+export default async function VoedingPage() {
   const session = await auth()
 
   if (!session?.user) {
@@ -51,7 +51,7 @@ export default async function ReportsPage() {
 
   return (
     <DashboardLayout userName={user.email} userRole={user.role} clients={clients}>
-      <ReportsListClient userRole={user.role} />
+      <VoedingClient user={user} />
     </DashboardLayout>
   )
 }

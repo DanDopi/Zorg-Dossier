@@ -18,7 +18,6 @@ async function makeSuperAdmin() {
     })
 
     console.log(`✅ User ${user.email} is now a SUPER_ADMIN`)
-    console.log(`Name: ${user.name}`)
     console.log(`Role: ${user.role}`)
   } catch (error) {
     console.error("❌ Error:", error)

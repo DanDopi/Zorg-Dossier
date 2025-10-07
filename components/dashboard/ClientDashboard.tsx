@@ -171,7 +171,7 @@ export default function ClientDashboard({ user }: ClientDashboardProps) {
                                 </span>
                               )}
                               <span>
-                                {new Date(report.createdAt).toLocaleDateString('nl-NL')}
+                                {report.createdAt ? new Date(report.createdAt).toLocaleDateString('nl-NL') : 'N/A'}
                               </span>
                             </div>
                           </div>

@@ -30,6 +30,11 @@ export async function GET(request: NextRequest) {
     const team = await prisma.caregiverClientRelationship.findMany({
       where: {
         clientId: user.clientProfile.id,
+        caregiver: {
+          user: {
+            role: "CAREGIVER", // Only show actual caregivers, not admins
+          },
+        },
       },
       include: {
         caregiver: {
@@ -53,6 +58,11 @@ export async function GET(request: NextRequest) {
         clientId: user.clientProfile.id,
         status: {
           in: ["PENDING", "DECLINED"],
+        },
+        caregiver: {
+          user: {
+            role: "CAREGIVER", // Only show actual caregivers, not admins
+          },
         },
       },
       include: {

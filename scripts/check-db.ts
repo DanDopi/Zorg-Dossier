@@ -21,14 +21,14 @@ async function checkDatabase() {
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
-        title: true,
+        content: true,
         createdAt: true,
       },
     })
 
     console.log("\nRecent Reports:")
     recentReports.forEach((report) => {
-      console.log(`- ${report.title} (${report.createdAt})`)
+      console.log(`- ${report.content.substring(0, 50)}... (${report.createdAt})`)
     })
   } catch (error) {
     console.error("Error:", error)

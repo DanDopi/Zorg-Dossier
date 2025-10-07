@@ -55,7 +55,7 @@ async function testStatsAPI() {
     console.log("Fetching active caregivers...")
     const activeCaregiversCount = await prisma.caregiverProfile.count({
       where: {
-        caregiverReports: {
+        careReports: {
           some: {},
         },
       },
@@ -66,7 +66,7 @@ async function testStatsAPI() {
     console.log("Fetching active clients...")
     const activeClientsCount = await prisma.clientProfile.count({
       where: {
-        clientReports: {
+        careReports: {
           some: {},
         },
       },
@@ -82,18 +82,17 @@ async function testStatsAPI() {
       include: {
         user: {
           select: {
-            name: true,
             email: true,
           },
         },
         _count: {
           select: {
-            caregiverReports: true,
+            careReports: true,
           },
         },
       },
       orderBy: {
-        caregiverReports: {
+        careReports: {
           _count: "desc",
         },
       },
@@ -103,11 +102,11 @@ async function testStatsAPI() {
     console.log(`Found ${topCaregiversData.length} caregivers`)
 
     const topCaregivers = topCaregiversData
-      .filter((c) => c._count.caregiverReports > 0)
+      .filter((c) => c._count.careReports > 0)
       .map((c) => ({
-        name: c.user.name || "",
+        name: c.name,
         email: c.user.email,
-        reportCount: c._count.caregiverReports,
+        reportCount: c._count.careReports,
       }))
 
     // Get top clients
@@ -116,18 +115,17 @@ async function testStatsAPI() {
       include: {
         user: {
           select: {
-            name: true,
             email: true,
           },
         },
         _count: {
           select: {
-            clientReports: true,
+            careReports: true,
           },
         },
       },
       orderBy: {
-        clientReports: {
+        careReports: {
           _count: "desc",
         },
       },
@@ -137,11 +135,11 @@ async function testStatsAPI() {
     console.log(`Found ${topClientsData.length} clients`)
 
     const topClients = topClientsData
-      .filter((c) => c._count.clientReports > 0)
+      .filter((c) => c._count.careReports > 0)
       .map((c) => ({
-        name: c.user.name || "",
+        name: c.name,
         email: c.user.email,
-        reportCount: c._count.clientReports,
+        reportCount: c._count.careReports,
       }))
 
     const result = {
