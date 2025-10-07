@@ -29,6 +29,25 @@ enum RelationshipStatus {
   INACTIVE
 }
 
+enum ShiftStatus {
+  UNFILLED
+  FILLED
+  CANCELLED
+  COMPLETED
+}
+
+enum TimeOffType {
+  DAY_OFF
+  SICK_LEAVE
+  VACATION
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  DENIED
+}
+
 model User {
   id                String    @id @default(cuid())
   email             String    @unique
@@ -85,6 +104,13 @@ model ClientProfile {
   // Family relationships (future feature)
   familyMembers FamilyClientRelationship[]
 
+  // Scheduling
+  shiftTypes    ShiftType[]
+  shifts        Shift[]
+  shiftPatterns ShiftPattern[]
+  timeOffRequests TimeOffRequest[]
+  schedulingSettings SchedulingSettings?
+
   @@index([userId])
 }
 
@@ -97,6 +123,7 @@ model CaregiverProfile {
   phoneNumber   String
   address       String
   bio           String?
+  color         String?  // Hex color for scheduling calendar display
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -121,6 +148,11 @@ model CaregiverProfile {
   // Nutrition (Voeding) records created by this caregiver
   mealRecords               MealRecord[]
   tubeFeedingAdministrations TubeFeedingAdministration[]
+
+  // Scheduling
+  shifts        Shift[]
+  shiftPatterns ShiftPattern[]
+  timeOffRequests TimeOffRequest[]
 
   @@index([userId])
   @@index([name])
@@ -516,4 +548,152 @@ model TubeFeedingAdministration {
   @@index([caregiverId])
   @@index([scheduledTime])
   @@index([administeredAt])
+}
+
+// ============================================
+// SCHEDULING SYSTEM
+// ============================================
+
+// Shift types defined by client (e.g., "Early Shift", "Late Shift", "Night Shift")
+model ShiftType {
+  id           String   @id @default(cuid())
+
+  clientId     String
+  client       ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  name         String   // "Early Shift", "Late Shift", etc.
+  startTime    String   // "06:00" (HH:mm format)
+  endTime      String   // "14:00" (HH:mm format)
+  color        String   // Hex color for UI display (e.g., "#3B82F6")
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  shifts       Shift[]
+  shiftPatterns ShiftPattern[]
+
+  @@index([clientId])
+}
+
+// Individual shift instances (actual scheduled shifts)
+model Shift {
+  id              String   @id @default(cuid())
+
+  clientId        String
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  shiftTypeId     String
+  shiftType       ShiftType @relation(fields: [shiftTypeId], references: [id], onDelete: Cascade)
+
+  date            DateTime // Date of this shift (time part should be midnight)
+  startTime       String   // Actual start time (can override shiftType default)
+  endTime         String   // Actual end time (can override shiftType default)
+
+  caregiverId     String?  // null = unfilled shift
+  caregiver       CaregiverProfile? @relation(fields: [caregiverId], references: [id], onDelete: SetNull)
+
+  status          ShiftStatus @default(UNFILLED)
+
+  // Pattern tracking for recurring shifts
+  patternId       String?  // Links shifts that are part of same recurring pattern
+  isPatternOverride Boolean @default(false) // true if manually changed from pattern
+
+  // Two types of notes
+  internalNotes   String?  @db.Text // Client-only notes
+  instructionNotes String? @db.Text // Visible to assigned caregiver
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String   // User ID who created this shift
+
+  @@index([clientId, date])
+  @@index([caregiverId, date])
+  @@index([shiftTypeId])
+  @@index([patternId])
+  @@index([status])
+  @@index([date])
+}
+
+// Recurring shift patterns (e.g., "John works early shift every Monday")
+model ShiftPattern {
+  id              String   @id @default(cuid())
+
+  clientId        String
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  caregiverId     String
+  caregiver       CaregiverProfile @relation(fields: [caregiverId], references: [id], onDelete: Cascade)
+
+  shiftTypeId     String
+  shiftType       ShiftType @relation(fields: [shiftTypeId], references: [id], onDelete: Cascade)
+
+  dayOfWeek       Int      // 0=Sunday, 1=Monday, 2=Tuesday, ..., 6=Saturday
+
+  startDate       DateTime @default(now()) // Pattern starts applying from this date
+  endDate         DateTime? // Optional end date for temporary patterns
+
+  isActive        Boolean  @default(true)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String   // User ID who created this pattern
+
+  @@index([clientId])
+  @@index([caregiverId])
+  @@index([shiftTypeId])
+  @@index([isActive])
+  @@index([clientId, isActive])
+}
+
+// Time-off requests from caregivers
+model TimeOffRequest {
+  id              String   @id @default(cuid())
+
+  caregiverId     String
+  caregiver       CaregiverProfile @relation(fields: [caregiverId], references: [id], onDelete: Cascade)
+
+  clientId        String
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  requestType     TimeOffType // DAY_OFF, SICK_LEAVE, VACATION
+  startDate       DateTime // Start of time off (date only, time should be midnight)
+  endDate         DateTime // End of time off (date only, time should be midnight)
+
+  reason          String?  @db.Text
+
+  status          RequestStatus @default(PENDING)
+  reviewedBy      String?  // User ID who approved/denied
+  reviewedAt      DateTime?
+  reviewNotes     String?  @db.Text
+
+  // For emergency sick leave
+  isEmergency     Boolean  @default(false) // true for same-day sick calls
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([caregiverId])
+  @@index([clientId])
+  @@index([status])
+  @@index([requestType])
+  @@index([startDate, endDate])
+}
+
+// Client-specific scheduling settings
+model SchedulingSettings {
+  id              String   @id @default(cuid())
+
+  clientId        String   @unique
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  // How many weeks ahead to generate shifts from patterns
+  weeksAhead      Int      @default(8)
+
+  // Last time patterns were processed
+  lastGenerated   DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([clientId])
 }
