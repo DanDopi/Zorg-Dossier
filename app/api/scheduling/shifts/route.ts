@@ -36,7 +36,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Build where clause based on user role
-    const where: any = {
+    const where: {
+      date: { gte: Date; lte: Date }
+      clientId?: string
+      caregiverId?: string
+    } = {
       date: {
         gte: new Date(startDate),
         lte: new Date(endDate),

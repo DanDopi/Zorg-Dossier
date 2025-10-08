@@ -48,6 +48,14 @@ enum RequestStatus {
   DENIED
 }
 
+enum RecurrenceType {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  FIRST_OF_MONTH
+  LAST_OF_MONTH
+}
+
 model User {
   id                String    @id @default(cuid())
   email             String    @unique
@@ -621,15 +629,15 @@ model ShiftPattern {
   clientId        String
   client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
-  caregiverId     String
-  caregiver       CaregiverProfile @relation(fields: [caregiverId], references: [id], onDelete: Cascade)
+  caregiverId     String?
+  caregiver       CaregiverProfile? @relation(fields: [caregiverId], references: [id], onDelete: Cascade)
 
   shiftTypeId     String
   shiftType       ShiftType @relation(fields: [shiftTypeId], references: [id], onDelete: Cascade)
 
-  dayOfWeek       Int      // 0=Sunday, 1=Monday, 2=Tuesday, ..., 6=Saturday
+  recurrenceType  RecurrenceType @default(WEEKLY) // How the pattern repeats
 
-  startDate       DateTime @default(now()) // Pattern starts applying from this date
+  startDate       DateTime @default(now()) // Pattern starts applying from this date (determines day of week)
   endDate         DateTime? // Optional end date for temporary patterns
 
   isActive        Boolean  @default(true)

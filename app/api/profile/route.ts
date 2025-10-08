@@ -93,11 +93,19 @@ export async function PUT(request: NextRequest) {
         },
       })
     } else if (user.role === "CAREGIVER" && user.caregiverProfile) {
-      const { name, phoneNumber, address, bio } = body
+      const { name, phoneNumber, address, bio, color } = body
 
       if (!name || !phoneNumber || !address) {
         return NextResponse.json(
           { error: "Naam, telefoonnummer en adres zijn verplicht" },
+          { status: 400 }
+        )
+      }
+
+      // Validate color format if provided
+      if (color && !/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(color)) {
+        return NextResponse.json(
+          { error: "Ongeldige kleurcode. Gebruik hex formaat (#RRGGBB)" },
           { status: 400 }
         )
       }
@@ -109,6 +117,7 @@ export async function PUT(request: NextRequest) {
           phoneNumber,
           address,
           bio: bio || "",
+          ...(color !== undefined && { color }),
         },
       })
     } else {

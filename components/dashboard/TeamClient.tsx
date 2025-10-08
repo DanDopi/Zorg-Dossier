@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import DashboardLayout from "@/components/dashboard/DashboardLayout"
+import { CaregiverBadge } from "@/components/ui/CaregiverBadge"
 
 interface CaregiverProfile {
   id: string
@@ -12,6 +13,7 @@ interface CaregiverProfile {
   phoneNumber: string
   address: string
   bio?: string
+  color?: string | null
   user: {
     email: string
   }
@@ -200,7 +202,13 @@ export default function TeamClient({ user }: TeamClientProps) {
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <h4 className="font-semibold text-lg">{member.caregiver.name}</h4>
+                          <div className="mb-2">
+                            <CaregiverBadge
+                              name={member.caregiver.name}
+                              color={member.caregiver.color}
+                              size="lg"
+                            />
+                          </div>
                           <p className="text-sm text-muted-foreground">
                             📧 {member.caregiver.user.email}
                           </p>
@@ -252,7 +260,13 @@ export default function TeamClient({ user }: TeamClientProps) {
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <h4 className="font-semibold text-lg">{member.caregiver.name}</h4>
+                          <div className="mb-2">
+                            <CaregiverBadge
+                              name={member.caregiver.name}
+                              color={member.caregiver.color}
+                              size="lg"
+                            />
+                          </div>
                           <p className="text-sm text-muted-foreground">
                             📧 {member.caregiver.user.email}
                           </p>

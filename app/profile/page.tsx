@@ -18,6 +18,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import Link from "next/link"
+import { CAREGIVER_COLORS } from "@/lib/constants/colors"
 
 const clientProfileSchema = z.object({
   name: z.string().min(2, "Naam is verplicht"),
@@ -30,6 +31,7 @@ const caregiverProfileSchema = z.object({
   phoneNumber: z.string().min(10, "Telefoonnummer is verplicht"),
   address: z.string().min(5, "Adres is verplicht"),
   bio: z.string().optional(),
+  color: z.string().optional(),
 })
 
 interface UserProfile {
@@ -46,6 +48,7 @@ interface UserProfile {
     phoneNumber: string
     address: string
     bio?: string | null
+    color?: string | null
   } | null
 }
 
@@ -90,6 +93,7 @@ export default function ProfilePage() {
           phoneNumber: data.caregiverProfile.phoneNumber,
           address: data.caregiverProfile.address,
           bio: data.caregiverProfile.bio || "",
+          color: data.caregiverProfile.color || CAREGIVER_COLORS[0].hex,
         })
       }
     } catch (err) {
@@ -233,6 +237,18 @@ export default function ProfilePage() {
                         <p className="text-lg">{user.caregiverProfile.bio}</p>
                       </div>
                     )}
+                    <div>
+                      <Label className="text-muted-foreground">Kalenderkleur</Label>
+                      <div className="flex items-center gap-3 mt-2">
+                        <div
+                          className="w-10 h-10 rounded-full border-2 border-gray-300"
+                          style={{ backgroundColor: user.caregiverProfile.color || CAREGIVER_COLORS[0].hex }}
+                        />
+                        <span className="text-sm text-muted-foreground">
+                          Gebruikt voor rooster visualisatie
+                        </span>
+                      </div>
+                    </div>
                   </>
                 )}
               </div>
@@ -309,19 +325,72 @@ export default function ProfilePage() {
                   />
 
                   {isCaregiver && (
-                    <FormField
-                      control={form.control}
-                      name="bio"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Bio (optioneel)</FormLabel>
-                          <FormControl>
-                            <Input {...field} disabled={isSaving} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                    <>
+                      <FormField
+                        control={form.control}
+                        name="bio"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Bio (optioneel)</FormLabel>
+                            <FormControl>
+                              <Input {...field} disabled={isSaving} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="color"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Kalenderkleur</FormLabel>
+                            <FormControl>
+                              <div className="space-y-3">
+                                <div className="grid grid-cols-10 gap-2">
+                                  {CAREGIVER_COLORS.slice(0, 10).map((color) => (
+                                    <button
+                                      key={color.hex}
+                                      type="button"
+                                      onClick={() => field.onChange(color.hex)}
+                                      className={`w-8 h-8 rounded-full transition-all ${
+                                        field.value === color.hex
+                                          ? "ring-2 ring-offset-2 ring-black scale-110"
+                                          : "hover:scale-105"
+                                      }`}
+                                      style={{ backgroundColor: color.hex }}
+                                      title={color.name}
+                                      disabled={isSaving}
+                                    />
+                                  ))}
+                                </div>
+                                <div className="grid grid-cols-10 gap-2">
+                                  {CAREGIVER_COLORS.slice(10, 20).map((color) => (
+                                    <button
+                                      key={color.hex}
+                                      type="button"
+                                      onClick={() => field.onChange(color.hex)}
+                                      className={`w-8 h-8 rounded-full transition-all ${
+                                        field.value === color.hex
+                                          ? "ring-2 ring-offset-2 ring-black scale-110"
+                                          : "hover:scale-105"
+                                      }`}
+                                      style={{ backgroundColor: color.hex }}
+                                      title={color.name}
+                                      disabled={isSaving}
+                                    />
+                                  ))}
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  Deze kleur wordt gebruikt om u te identificeren in het rooster
+                                </p>
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </>
                   )}
 
                   <div className="flex gap-3 pt-4">
