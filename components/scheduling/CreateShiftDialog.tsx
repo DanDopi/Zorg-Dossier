@@ -300,8 +300,8 @@ export default function CreateShiftDialog({
                   <Label htmlFor="recurrenceType">Herhaling</Label>
                   <Select
                     value={patternData.recurrenceType}
-                    onValueChange={(value: any) =>
-                      setPatternData({ ...patternData, recurrenceType: value })
+                    onValueChange={(value) =>
+                      setPatternData({ ...patternData, recurrenceType: value as typeof patternData.recurrenceType })
                     }
                   >
                     <SelectTrigger>

@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
     // Check access
     const hasAccess =
       (user.role === "CLIENT" && user.clientProfile?.id === clientId) ||
-      (user.role === "CAREGIVER" && user.caregiverProfile?.clientRelationships.length! > 0) ||
+      (user.role === "CAREGIVER" && (user.caregiverProfile?.clientRelationships.length ?? 0) > 0) ||
       user.role === "SUPER_ADMIN" ||
       user.role === "ADMIN"
 

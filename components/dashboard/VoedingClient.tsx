@@ -63,6 +63,14 @@ interface DailyScheduleItem {
   administration?: TubeFeedingAdministration
 }
 
+interface AdministrationForm {
+  volumeGiven: number
+  speedUsed: number
+  wasGiven: boolean
+  skipReason: string
+  notes: string
+}
+
 interface FluidIntakeRecord {
   id: string
   recordDate: string
@@ -543,7 +551,7 @@ export default function VoedingClient({ user }: VoedingClientProps) {
             <h1 className="text-3xl font-bold text-gray-900">Voeding</h1>
             <p className="text-muted-foreground mt-1">
               {isClient
-                ? "Beheer maaltijden en sondevoeding schema's"
+                ? "Beheer maaltijden en sondevoeding schema&apos;s"
                 : "Registreer maaltijden en sondevoeding toediening"}
             </p>
           </div>
@@ -644,6 +652,7 @@ export default function VoedingClient({ user }: VoedingClientProps) {
             isScheduleDialogOpen={isScheduleDialogOpen}
             setIsScheduleDialogOpen={setIsScheduleDialogOpen}
             editingSchedule={editingSchedule}
+            setEditingSchedule={setEditingSchedule}
             newSchedule={newSchedule}
             setNewSchedule={setNewSchedule}
             handleAddSchedule={handleAddSchedule}
@@ -679,7 +688,16 @@ function MealsTab({
   setNewMeal,
   handleAddMeal,
   selectedDate,
-}: any) {
+}: {
+  mealRecords: MealRecord[]
+  isCaregiver: boolean
+  isMealDialogOpen: boolean
+  setIsMealDialogOpen: (open: boolean) => void
+  newMeal: { time: string; mealType: string; description: string; amount: string; notes: string }
+  setNewMeal: React.Dispatch<React.SetStateAction<{ time: string; mealType: string; description: string; amount: string; notes: string }>>
+  handleAddMeal: () => void
+  selectedDate: string
+}) {
   const mealTypeLabels: Record<string, string> = {
     breakfast: "Ontbijt",
     lunch: "Lunch",
@@ -880,13 +898,26 @@ function TubeFeedingScheduleTab({
   isScheduleDialogOpen,
   setIsScheduleDialogOpen,
   editingSchedule,
+  setEditingSchedule,
   newSchedule,
   setNewSchedule,
   handleAddSchedule,
   handleUpdateSchedule,
   handleDeleteSchedule,
   openEditScheduleDialog,
-}: any) {
+}: {
+  schedules: TubeFeedingSchedule[]
+  isScheduleDialogOpen: boolean
+  setIsScheduleDialogOpen: (open: boolean) => void
+  editingSchedule: TubeFeedingSchedule | null
+  setEditingSchedule: React.Dispatch<React.SetStateAction<TubeFeedingSchedule | null>>
+  newSchedule: { feedingTime: string; volume: number; feedSpeed: number; feedType: string; recurrenceType: string; daysOfWeek: string[]; startDate: string; endDate: string }
+  setNewSchedule: React.Dispatch<React.SetStateAction<{ feedingTime: string; volume: number; feedSpeed: number; feedType: string; recurrenceType: string; daysOfWeek: string[]; startDate: string; endDate: string }>>
+  handleAddSchedule: () => void
+  handleUpdateSchedule: () => void
+  handleDeleteSchedule: (id: string) => void
+  openEditScheduleDialog: (schedule: TubeFeedingSchedule) => void
+}) {
   return (
     <Card>
       <CardHeader>
@@ -1056,7 +1087,7 @@ function TubeFeedingScheduleTab({
       <CardContent>
         {schedules.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
-            <p>Nog geen voedingsschema's aangemaakt</p>
+            <p>Nog geen voedingsschema&apos;s aangemaakt</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -1122,7 +1153,17 @@ function TubeFeedingAdministrationTab({
   openAdministerDialog,
   setAdministerDialogOpen,
   selectedDate,
-}: any) {
+}: {
+  dailySchedule: DailyScheduleItem[]
+  administerDialogOpen: boolean
+  selectedScheduleItem: DailyScheduleItem | null
+  administrationForm: AdministrationForm
+  setAdministrationForm: (form: AdministrationForm) => void
+  handleAdministerFeeding: () => void
+  openAdministerDialog: (item: DailyScheduleItem) => void
+  setAdministerDialogOpen: (open: boolean) => void
+  selectedDate: string
+}) {
   // Calculate summary
   const summary = {
     total: dailySchedule.length,
@@ -1178,7 +1219,7 @@ function TubeFeedingAdministrationTab({
         <CardContent>
           {dailySchedule.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
-              <p>Geen voedingsschema's gepland voor deze dag</p>
+              <p>Geen voedingsschema&apos;s gepland voor deze dag</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -1329,7 +1370,18 @@ function FluidBalanceTab({
   handleAddFluidIntake,
   handleDeleteFluidIntake,
   selectedDate,
-}: any) {
+}: {
+  fluidIntakeRecords: FluidIntakeRecord[]
+  urineRecords: UrineRecord[]
+  isCaregiver: boolean
+  isFluidIntakeDialogOpen: boolean
+  setIsFluidIntakeDialogOpen: (open: boolean) => void
+  newFluidIntake: { time: string; volume: string; fluidType: string; notes: string }
+  setNewFluidIntake: React.Dispatch<React.SetStateAction<{ time: string; volume: string; fluidType: string; notes: string }>>
+  handleAddFluidIntake: () => void
+  handleDeleteFluidIntake: (id: string) => void
+  selectedDate: string
+}) {
   // Check if selected date is in the future
   const isFutureDate = selectedDate > new Date().toISOString().split("T")[0]
 

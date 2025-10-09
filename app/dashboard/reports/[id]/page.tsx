@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma"
 import DashboardLayout from "@/components/dashboard/DashboardLayout"
 import ReportDetailClient from "@/components/dashboard/ReportDetailClient"
 
-export default async function ReportDetailPage({ params }: { params: { id: string } }) {
+export default async function ReportDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   const session = await auth()
 
   if (!session?.user) {
@@ -51,7 +52,7 @@ export default async function ReportDetailPage({ params }: { params: { id: strin
 
   return (
     <DashboardLayout userName={user.email} userRole={user.role} clients={clients}>
-      <ReportDetailClient reportId={params.id} />
+      <ReportDetailClient reportId={id} />
     </DashboardLayout>
   )
 }

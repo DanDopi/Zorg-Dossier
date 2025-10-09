@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
 
         while (isBefore(currentMonth, patternEndDay)) {
           // Find last occurrence of dayOfWeek in this month
-          let lastDay = lastDayOfMonth(currentMonth)
+          const lastDay = lastDayOfMonth(currentMonth)
           let lastOccurrence = lastDay
 
           // Walk backwards to find last occurrence

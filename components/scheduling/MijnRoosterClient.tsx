@@ -39,7 +39,7 @@ interface Shift {
     id: string
     name: string
   }
-  client: {
+  client?: {
     id: string
     name: string
   }
@@ -78,9 +78,9 @@ export default function MijnRoosterClient({
       const response = await fetch(`/api/scheduling/shifts?${params}`)
       if (response.ok) {
         const data = await response.json()
-        const shiftsWithDates = (data as Array<Record<string, unknown>>).map((shift) => ({
+        const shiftsWithDates = (data as Shift[]).map((shift) => ({
           ...shift,
-          date: new Date(shift.date as string),
+          date: new Date(shift.date as unknown as string),
         }))
         setUpcomingShifts(shiftsWithDates.slice(0, 5))
       }
@@ -175,7 +175,7 @@ export default function MijnRoosterClient({
                     <div>
                       <div className="font-semibold">{shift.shiftType.name}</div>
                       <div className="text-sm text-muted-foreground">
-                        {shift.client.name}
+                        {shift.client?.name || "Onbekend"}
                       </div>
                     </div>
                   </div>
@@ -219,7 +219,7 @@ export default function MijnRoosterClient({
                   <label className="text-sm font-medium text-muted-foreground">
                     Cliënt
                   </label>
-                  <p className="text-base mt-1">{selectedShift.client.name}</p>
+                  <p className="text-base mt-1">{selectedShift.client?.name || "Onbekend"}</p>
                 </div>
                 <div>
                   <label className="text-sm font-medium text-muted-foreground">

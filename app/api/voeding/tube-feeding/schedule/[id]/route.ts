@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma"
 // PUT /api/voeding/tube-feeding/schedule/[id] - Update a tube feeding schedule
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth()
@@ -17,7 +17,7 @@ export async function PUT(
       )
     }
 
-    const scheduleId = params.id
+    const { id: scheduleId } = await params
     const body = await request.json()
 
     // Fetch existing schedule
@@ -66,20 +66,28 @@ export async function PUT(
       )
     }
 
-    // Update schedule
+    // Update schedule - build data object conditionally
+    const updateData: Record<string, unknown> = {}
+
+    if (body.feedingTime !== undefined) updateData.feedingTime = body.feedingTime
+    if (body.volume !== undefined) updateData.volume = parseInt(body.volume)
+    if (body.feedSpeed !== undefined) updateData.feedSpeed = parseInt(body.feedSpeed)
+    if (body.feedType !== undefined) updateData.feedType = body.feedType
+    if (body.recurrenceType !== undefined) updateData.recurrenceType = body.recurrenceType
+    if (body.daysOfWeek !== undefined) {
+      updateData.daysOfWeek = body.daysOfWeek && body.daysOfWeek.length > 0 ? JSON.stringify(body.daysOfWeek) : null
+    }
+    if (body.startDate !== undefined) {
+      updateData.startDate = body.startDate ? new Date(body.startDate) : null
+    }
+    if (body.endDate !== undefined) {
+      updateData.endDate = body.endDate ? new Date(body.endDate) : null
+    }
+    if (body.isActive !== undefined) updateData.isActive = body.isActive
+
     const updatedSchedule = await prisma.tubeFeedingSchedule.update({
       where: { id: scheduleId },
-      data: {
-        feedingTime: body.feedingTime !== undefined ? body.feedingTime : undefined,
-        volume: body.volume !== undefined ? parseInt(body.volume) : undefined,
-        feedSpeed: body.feedSpeed !== undefined ? parseInt(body.feedSpeed) : undefined,
-        feedType: body.feedType !== undefined ? body.feedType : undefined,
-        recurrenceType: body.recurrenceType !== undefined ? body.recurrenceType : undefined,
-        daysOfWeek: body.daysOfWeek !== undefined ? (body.daysOfWeek && body.daysOfWeek.length > 0 ? JSON.stringify(body.daysOfWeek) : null) : undefined,
-        startDate: body.startDate !== undefined ? (body.startDate ? new Date(body.startDate) : null) : undefined,
-        endDate: body.endDate !== undefined ? (body.endDate ? new Date(body.endDate) : null) : undefined,
-        isActive: body.isActive !== undefined ? body.isActive : undefined,
-      },
+      data: updateData,
     })
 
     return NextResponse.json({ schedule: updatedSchedule }, { status: 200 })
@@ -95,7 +103,7 @@ export async function PUT(
 // DELETE /api/voeding/tube-feeding/schedule/[id] - Delete a tube feeding schedule
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await auth()
@@ -107,7 +115,7 @@ export async function DELETE(
       )
     }
 
-    const scheduleId = params.id
+    const { id: scheduleId } = await params
 
     // Fetch existing schedule
     const existingSchedule = await prisma.tubeFeedingSchedule.findUnique({

@@ -109,7 +109,7 @@ export default function ShiftPatternManagement({
   const [formData, setFormData] = useState({
     caregiverId: caregivers[0]?.id || "",
     shiftTypeId: shiftTypes[0]?.id || "",
-    recurrenceType: "WEEKLY" as const,
+    recurrenceType: "WEEKLY" as "DAILY" | "WEEKLY" | "BIWEEKLY" | "FIRST_OF_MONTH" | "LAST_OF_MONTH",
     startDate: format(new Date(), "yyyy-MM-dd"),
     endDate: getYearEndDate(),
   })
@@ -117,7 +117,7 @@ export default function ShiftPatternManagement({
   const [editFormData, setEditFormData] = useState({
     caregiverId: "",
     shiftTypeId: "",
-    recurrenceType: "WEEKLY" as const,
+    recurrenceType: "WEEKLY" as "DAILY" | "WEEKLY" | "BIWEEKLY" | "FIRST_OF_MONTH" | "LAST_OF_MONTH",
     startDate: "",
     endDate: "",
   })
@@ -223,9 +223,14 @@ export default function ShiftPatternManagement({
   }
 
   const handleEditPattern = (pattern: ShiftPattern) => {
+    if (!pattern.shiftType) {
+      alert("Patroon data is onvolledig")
+      return
+    }
+
     setEditingPattern(pattern)
     setEditFormData({
-      caregiverId: pattern.caregiver.id,
+      caregiverId: pattern.caregiver?.id || "",
       shiftTypeId: pattern.shiftType.id,
       recurrenceType: pattern.recurrenceType,
       startDate: format(pattern.startDate, "yyyy-MM-dd"),
@@ -485,8 +490,8 @@ export default function ShiftPatternManagement({
               <Label htmlFor="recurrenceType">Herhaling</Label>
               <Select
                 value={formData.recurrenceType}
-                onValueChange={(value: any) =>
-                  setFormData({ ...formData, recurrenceType: value })
+                onValueChange={(value) =>
+                  setFormData({ ...formData, recurrenceType: value as typeof formData.recurrenceType })
                 }
               >
                 <SelectTrigger>
@@ -594,8 +599,8 @@ export default function ShiftPatternManagement({
               <Label htmlFor="edit-recurrenceType">Herhaling</Label>
               <Select
                 value={editFormData.recurrenceType}
-                onValueChange={(value: any) =>
-                  setEditFormData({ ...editFormData, recurrenceType: value })
+                onValueChange={(value) =>
+                  setEditFormData({ ...editFormData, recurrenceType: value as typeof editFormData.recurrenceType })
                 }
               >
                 <SelectTrigger>

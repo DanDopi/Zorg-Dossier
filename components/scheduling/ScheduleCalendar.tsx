@@ -41,6 +41,10 @@ interface Shift {
     name: string
     color?: string | null
   } | null
+  client?: {
+    id: string
+    name: string
+  }
 }
 
 interface ScheduleCalendarProps {
