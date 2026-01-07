@@ -62,6 +62,8 @@ model User {
   password          String
   role              UserRole
   emailVerified     DateTime?
+  resetToken        String?
+  resetTokenExpiry  DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -74,6 +76,7 @@ model User {
   verificationTokens VerificationToken[]
 
   @@index([email])
+  @@index([resetToken])
 }
 
 model ClientProfile {
@@ -108,6 +111,10 @@ model ClientProfile {
   mealRecords               MealRecord[]
   tubeFeedingSchedules      TubeFeedingSchedule[]
   tubeFeedingAdministrations TubeFeedingAdministration[]
+
+  // Wound care (Wondzorgplan) records for this client
+  woundCarePlans            WoundCarePlan[]
+  woundCareReports          WoundCareReport[]
 
   // Family relationships (future feature)
   familyMembers FamilyClientRelationship[]
@@ -156,6 +163,9 @@ model CaregiverProfile {
   // Nutrition (Voeding) records created by this caregiver
   mealRecords               MealRecord[]
   tubeFeedingAdministrations TubeFeedingAdministration[]
+
+  // Wound care (Wondzorgplan) records created by this caregiver
+  woundCareReports          WoundCareReport[]
 
   // Scheduling
   shifts        Shift[]
@@ -219,6 +229,9 @@ model CaregiverClientRelationship {
   client        ClientProfile      @relation("ClientRelationships", fields: [clientId], references: [id], onDelete: Cascade)
 
   status        RelationshipStatus @default(ACTIVE)
+
+  // Caregiver-specific color preference for this client (displayed in caregiver's calendar)
+  clientColorPreference String? // Hex color code (e.g., "#3B82F6")
 
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
@@ -636,6 +649,7 @@ model ShiftPattern {
   shiftType       ShiftType @relation(fields: [shiftTypeId], references: [id], onDelete: Cascade)
 
   recurrenceType  RecurrenceType @default(WEEKLY) // How the pattern repeats
+  daysOfWeek      String?  // JSON array: ["monday", "wednesday", "friday"] for multi-day patterns
 
   startDate       DateTime @default(now()) // Pattern starts applying from this date (determines day of week)
   endDate         DateTime? // Optional end date for temporary patterns
@@ -663,6 +677,8 @@ model TimeOffRequest {
   clientId        String
   client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
+  groupId         String?  // Links requests from same multi-client submission
+
   requestType     TimeOffType // DAY_OFF, SICK_LEAVE, VACATION
   startDate       DateTime // Start of time off (date only, time should be midnight)
   endDate         DateTime // End of time off (date only, time should be midnight)
@@ -685,6 +701,22 @@ model TimeOffRequest {
   @@index([status])
   @@index([requestType])
   @@index([startDate, endDate])
+  @@index([groupId])
+}
+
+// Tracks which users have dismissed which time-off notifications
+model DismissedNotification {
+  id              String   @id @default(cuid())
+
+  userId          String   // User who dismissed the notification
+  timeOffRequestId String  // The time-off request that was dismissed
+
+  dismissedAt     DateTime @default(now())
+
+  // Prevent duplicate dismissals by same user
+  @@unique([userId, timeOffRequestId])
+  @@index([userId])
+  @@index([timeOffRequestId])
 }
 
 // Client-specific scheduling settings
@@ -704,4 +736,120 @@ model SchedulingSettings {
   updatedAt       DateTime @updatedAt
 
   @@index([clientId])
+}
+
+// ============================================
+// WOUND CARE (WONDZORGPLAN) MANAGEMENT
+// ============================================
+
+// Part 1: Algemene wondgegevens (General wound data)
+// Contains the baseline information about a wound and treatment plan
+model WoundCarePlan {
+  id              String   @id @default(cuid())
+
+  clientId        String
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  // Basisinformatie (Basic information)
+  dateOfOnset     DateTime // Datum van ontstaan van de wond
+  cause           String   // Oorzaak (trauma, druk, operatie, ulcus, etc.)
+  location        String   // Lichamelijke plaats
+  woundType       String   // Type wond (decubitus, veneus ulcus, diabetische voet, etc.)
+
+  // Wondkenmerken (Wound characteristics)
+  length          Float?   // Lengte in cm
+  width           Float?   // Breedte in cm
+  depth           Float?   // Diepte in cm
+  woundEdges      String?  @db.Text // Wondranden beschrijving
+  woundBed        String?  @db.Text // Wondbodem (granulerend, fibrineus, necrotisch)
+  exudate         String?  @db.Text // Exsudaat (hoeveelheid, kleur, geur)
+  surroundingSkin String?  @db.Text // Conditie omliggende huid
+
+  // Initial photo (stored as base64 or URL)
+  initialPhoto    String?  @db.Text
+  photoDate       DateTime?
+
+  // Part 2: Behandelplan / Wondbeleid (Treatment plan)
+  treatmentGoal   String   @db.Text // Doel van behandeling
+  products        String   @db.Text // Wondverzorgingsproducten en verbandmiddelen
+  frequency       String   // Frequentie van wondverzorging
+  cleaningMethod  String   @db.Text // Reinigingsmethode
+  instructions    String?  @db.Text // Specifieke instructies
+  performedBy     String?  // Wie voert de zorg uit
+  evaluationSchedule String? // Wanneer en door wie evaluatie
+
+  isActive        Boolean  @default(true)
+  startDate       DateTime @default(now())
+  endDate         DateTime? // When wound care plan is no longer active
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       String   // User ID who created this plan
+
+  // Daily wound reports
+  reports         WoundCareReport[]
+
+  @@index([clientId])
+  @@index([isActive])
+  @@index([startDate])
+  @@index([clientId, isActive])
+}
+
+// Part 3: Dagelijkse wondrapportage (Daily wound reports)
+// Records observations made during each wound care session
+model WoundCareReport {
+  id              String   @id @default(cuid())
+
+  woundCarePlanId String
+  woundCarePlan   WoundCarePlan @relation(fields: [woundCarePlanId], references: [id], onDelete: Cascade)
+
+  clientId        String
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  caregiverId     String
+  caregiver       CaregiverProfile @relation(fields: [caregiverId], references: [id], onDelete: Cascade)
+
+  reportDate      DateTime // Datum van wondverzorging
+  reportTime      DateTime // Tijd van wondverzorging
+
+  // Care performed
+  cleaningPerformed String  @db.Text // Reiniging uitgevoerd (hoe en waarmee)
+  productsUsed      String  @db.Text // Verbandmiddelen die zijn gebruikt
+
+  // Observations
+  woundColor        String?  // Kleur van de wond
+  woundOdor         String?  // Geur
+  exudateAmount     String?  // Hoeveelheid wondvocht
+  painLevel         String?  // Pijn niveau
+  sizeChange        String?  @db.Text // Verandering in grootte
+  edgeCondition     String?  @db.Text // Conditie wondranden
+  skinCondition     String?  @db.Text // Conditie omliggende huid
+
+  // Client reaction
+  clientPain        String?  // Pijn ervaring cliënt
+  clientComfort     String?  // Comfort niveau
+  clientAnxiety     String?  // Angst niveau
+
+  // Complications
+  complications     String?  @db.Text // Bloeding, lekkage, los verband, infectie tekenen
+
+  // Evaluation
+  evaluation        String   // Verbetering, verslechtering, stabiel
+  generalNotes      String?  @db.Text // Algemene notities
+
+  // Photo (if wound changed)
+  photo             String?  @db.Text // Foto bij verandering
+  photoDate         DateTime?
+
+  // Next care date
+  nextCareDate      DateTime?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([woundCarePlanId])
+  @@index([clientId])
+  @@index([caregiverId])
+  @@index([reportDate])
+  @@index([clientId, reportDate])
 }

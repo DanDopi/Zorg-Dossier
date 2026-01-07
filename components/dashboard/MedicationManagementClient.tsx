@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { getMaxFileSizeClient } from "@/lib/fileValidation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -103,6 +104,7 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
   const [dailySchedule, setDailySchedule] = useState<DailySchedule | null>(null)
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split("T")[0])
   const [isLoading, setIsLoading] = useState(true)
+  const [maxFileSize, setMaxFileSize] = useState(5 * 1024 * 1024) // Default 5MB
 
   // Add medication dialog state
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
@@ -152,6 +154,15 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
   const isCaregiver = user.role === "CAREGIVER"
   const isToday = selectedDate === new Date().toISOString().split("T")[0]
   const isTodayOrPast = selectedDate <= new Date().toISOString().split("T")[0]
+
+  // Load max file size on mount
+  useEffect(() => {
+    async function loadMaxFileSize() {
+      const size = await getMaxFileSizeClient()
+      setMaxFileSize(size)
+    }
+    loadMaxFileSize()
+  }, [])
 
   useEffect(() => {
     // For clients, load data immediately
@@ -253,9 +264,10 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
         return
       }
 
-      // Validate file size (max 2MB for base64 storage)
-      if (file.size > 2 * 1024 * 1024) {
-        alert('Afbeelding is te groot. Maximaal 2MB toegestaan.')
+      // Validate file size
+      if (file.size > maxFileSize) {
+        const maxMB = (maxFileSize / (1024 * 1024)).toFixed(0)
+        alert(`Afbeelding is te groot. Maximaal ${maxMB}MB toegestaan.`)
         return
       }
 
@@ -279,9 +291,10 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
         return
       }
 
-      // Validate file size (max 2MB for base64 storage)
-      if (file.size > 2 * 1024 * 1024) {
-        alert('Afbeelding is te groot. Maximaal 2MB toegestaan.')
+      // Validate file size
+      if (file.size > maxFileSize) {
+        const maxMB = (maxFileSize / (1024 * 1024)).toFixed(0)
+        alert(`Afbeelding is te groot. Maximaal ${maxMB}MB toegestaan.`)
         return
       }
 

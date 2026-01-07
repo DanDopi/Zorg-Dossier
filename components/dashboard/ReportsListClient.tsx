@@ -92,6 +92,26 @@ export default function ReportsListClient({ userRole }: ReportsListClientProps) 
     }
   }
 
+  // Group reports by date
+  function groupReportsByDate(reports: Report[]) {
+    const grouped: { [key: string]: Report[] } = {}
+
+    reports.forEach(report => {
+      const dateKey = new Date(report.reportDate).toLocaleDateString('nl-NL', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      })
+
+      if (!grouped[dateKey]) {
+        grouped[dateKey] = []
+      }
+      grouped[dateKey].push(report)
+    })
+
+    return grouped
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -116,11 +136,21 @@ export default function ReportsListClient({ userRole }: ReportsListClientProps) 
               : "Rapportages van uw zorgverleners"}
           </p>
         </div>
-        {isCaregiver && (
-          <Link href="/dashboard/reports/new">
-            <Button>+ Nieuw Rapport</Button>
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard/rapporteren">
+            <Button variant="outline">
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              Terug naar Rapporteren
+            </Button>
           </Link>
-        )}
+          {isCaregiver && (
+            <Link href="/dashboard/reports/new">
+              <Button>+ Nieuw Rapport</Button>
+            </Link>
+          )}
+        </div>
       </div>
 
       <Card>
@@ -143,68 +173,77 @@ export default function ReportsListClient({ userRole }: ReportsListClientProps) 
               )}
             </div>
           ) : (
-            <div className="space-y-4">
-              {reports.map((report) => (
-                <Link key={report.id} href={`/dashboard/reports/${report.id}`}>
-                  <Card className="hover:shadow-lg transition-shadow cursor-pointer border-l-4 border-l-green-500">
-                    <CardContent className="p-5">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          {/* Client/Caregiver Info */}
-                          <div className="flex items-center gap-2 mb-2">
-                            <h4 className="font-semibold text-lg">
-                              {isCaregiver
-                                ? report.client.name
-                                : report.caregiver.name}
-                            </h4>
-                            <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
-                              {new Date(report.reportDate).toLocaleDateString('nl-NL', {
-                                day: 'numeric',
-                                month: 'long',
-                                year: 'numeric'
-                              })}
-                            </span>
-                          </div>
+            <div className="space-y-6">
+              {Object.entries(groupReportsByDate(reports)).map(([dateKey, dateReports]) => (
+                <div key={dateKey} className="space-y-3">
+                  {/* Date Header/Separator */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-px bg-gray-300"></div>
+                    <h3 className="text-sm font-semibold text-gray-600 px-3 py-1 bg-gray-100 rounded-full">
+                      {dateKey}
+                    </h3>
+                    <div className="flex-1 h-px bg-gray-300"></div>
+                  </div>
 
-                          {/* Show caregiver name when viewing client's reports */}
-                          {isCaregiver && (
-                            <p className="text-sm text-blue-600 mb-1">
-                              Door: {report.caregiver.name}
-                            </p>
-                          )}
+                  {/* Reports for this date */}
+                  <div className="space-y-3">
+                    {dateReports.map((report) => (
+                      <Link key={report.id} href={`/dashboard/reports/${report.id}`}>
+                        <Card className="hover:shadow-lg transition-shadow cursor-pointer border-l-4 border-l-green-500">
+                          <CardContent className="p-5">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                {/* Client/Caregiver Info */}
+                                <div className="flex items-center gap-2 mb-2">
+                                  <h4 className="font-semibold text-lg">
+                                    {isCaregiver
+                                      ? report.client.name
+                                      : report.caregiver.name}
+                                  </h4>
+                                </div>
 
-                          {/* Report Preview */}
-                          <p className="text-sm text-gray-700 line-clamp-2 mb-2">
-                            {report.content}
-                          </p>
+                                {/* Show caregiver name when viewing client's reports */}
+                                {isCaregiver && (
+                                  <p className="text-sm text-blue-600 mb-1">
+                                    Door: {report.caregiver.name}
+                                  </p>
+                                )}
 
-                          {/* Metadata */}
-                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                            <span>
-                              📧 {isCaregiver
-                                ? report.client.user.email
-                                : report.caregiver.user.email}
-                            </span>
-                            {report.images && report.images.length > 0 && (
-                              <span className="flex items-center gap-1">
-                                📷 {report.images.length} {report.images.length === 1 ? 'afbeelding' : 'afbeeldingen'}
-                              </span>
-                            )}
-                            <span>
-                              Aangemaakt: {new Date(report.createdAt).toLocaleDateString('nl-NL')}
-                            </span>
-                          </div>
-                        </div>
+                                {/* Report Preview */}
+                                <p className="text-sm text-gray-700 line-clamp-2 mb-2">
+                                  {report.content}
+                                </p>
 
-                        <div className="ml-4">
-                          <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
+                                {/* Metadata */}
+                                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                  <span>
+                                    📧 {isCaregiver
+                                      ? report.client.user.email
+                                      : report.caregiver.user.email}
+                                  </span>
+                                  {report.images && report.images.length > 0 && (
+                                    <span className="flex items-center gap-1">
+                                      📷 {report.images.length} {report.images.length === 1 ? 'afbeelding' : 'afbeeldingen'}
+                                    </span>
+                                  )}
+                                  <span>
+                                    Aangemaakt: {new Date(report.createdAt).toLocaleDateString('nl-NL')}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="ml-4">
+                                <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           )}

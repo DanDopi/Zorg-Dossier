@@ -66,6 +66,14 @@ export default function ProfilePage() {
 
   const form = useForm({
     resolver: zodResolver(isClient ? clientProfileSchema : caregiverProfileSchema),
+    defaultValues: {
+      name: "",
+      dateOfBirth: "",
+      address: "",
+      phoneNumber: "",
+      bio: "",
+      color: CAREGIVER_COLORS[0].hex,
+    },
   })
 
   useEffect(() => {

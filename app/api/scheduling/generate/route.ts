@@ -15,6 +15,20 @@ import {
   getDate
 } from "date-fns"
 
+// Helper function: Convert day name to day index (1=Monday, 7=Sunday)
+function getDayIndex(dayName: string): number {
+  const dayMap: { [key: string]: number } = {
+    monday: 1,
+    tuesday: 2,
+    wednesday: 3,
+    thursday: 4,
+    friday: 5,
+    saturday: 6,
+    sunday: 0, // Sunday is 0 in date-fns getDay(), but we'll handle this specially
+  }
+  return dayMap[dayName.toLowerCase()] ?? 1
+}
+
 // POST /api/scheduling/generate - Generate shifts from patterns
 export async function POST(request: NextRequest) {
   try {
@@ -101,28 +115,76 @@ export async function POST(request: NextRequest) {
           currentDate = addDays(currentDate, 1)
         }
       } else if (pattern.recurrenceType === "WEEKLY") {
-        // Every week on the same day as startDate
-        let currentWeek = startOfWeek(today > patternStartDay ? today : patternStartDay, { weekStartsOn: 1 })
+        // Parse daysOfWeek if available
+        const daysOfWeek = pattern.daysOfWeek ? JSON.parse(pattern.daysOfWeek) : null
 
-        while (isBefore(currentWeek, patternEndDay)) {
-          const daysToAdd = dayOfWeekFromStart === 0 ? 6 : dayOfWeekFromStart - 1
-          const shiftDate = startOfDay(addDays(currentWeek, daysToAdd))
+        if (daysOfWeek && daysOfWeek.length > 0) {
+          // Multi-day weekly pattern: create shifts for each selected day of each week
+          let currentWeek = startOfWeek(today > patternStartDay ? today : patternStartDay, { weekStartsOn: 1 })
 
-          if (!isBefore(shiftDate, patternStartDay) && !isAfter(shiftDate, patternEndDay) && !isBefore(shiftDate, today)) {
-            datesToGenerate.push(shiftDate)
+          while (isBefore(currentWeek, patternEndDay)) {
+            // For each selected day of week, create a shift
+            for (const dayName of daysOfWeek) {
+              const dayIndex = getDayIndex(dayName)
+              // dayIndex: 0=Sunday, 1=Monday, ..., 6=Saturday
+              // weekStartsOn:1 means Monday is day 0 of the week
+              const daysToAdd = dayIndex === 0 ? 6 : dayIndex - 1 // Sunday is 6 days after Monday
+              const shiftDate = startOfDay(addDays(currentWeek, daysToAdd))
+
+              if (!isBefore(shiftDate, patternStartDay) && !isAfter(shiftDate, patternEndDay) && !isBefore(shiftDate, today)) {
+                datesToGenerate.push(shiftDate)
+              }
+            }
+
+            currentWeek = addWeeks(currentWeek, 1)
           }
+        } else {
+          // Legacy behavior: every week on the same day as startDate
+          let currentWeek = startOfWeek(today > patternStartDay ? today : patternStartDay, { weekStartsOn: 1 })
 
-          currentWeek = addWeeks(currentWeek, 1)
+          while (isBefore(currentWeek, patternEndDay)) {
+            const daysToAdd = dayOfWeekFromStart === 0 ? 6 : dayOfWeekFromStart - 1
+            const shiftDate = startOfDay(addDays(currentWeek, daysToAdd))
+
+            if (!isBefore(shiftDate, patternStartDay) && !isAfter(shiftDate, patternEndDay) && !isBefore(shiftDate, today)) {
+              datesToGenerate.push(shiftDate)
+            }
+
+            currentWeek = addWeeks(currentWeek, 1)
+          }
         }
       } else if (pattern.recurrenceType === "BIWEEKLY") {
-        // Every other week on the same day as startDate
-        let currentDate = patternStartDay
+        // Parse daysOfWeek if available
+        const daysOfWeek = pattern.daysOfWeek ? JSON.parse(pattern.daysOfWeek) : null
 
-        while (!isAfter(currentDate, patternEndDay)) {
-          if (!isBefore(currentDate, today)) {
-            datesToGenerate.push(startOfDay(currentDate))
+        if (daysOfWeek && daysOfWeek.length > 0) {
+          // Multi-day biweekly pattern: create shifts for each selected day every other week
+          let currentWeek = startOfWeek(today > patternStartDay ? today : patternStartDay, { weekStartsOn: 1 })
+
+          while (isBefore(currentWeek, patternEndDay)) {
+            // For each selected day of week, create a shift
+            for (const dayName of daysOfWeek) {
+              const dayIndex = getDayIndex(dayName)
+              const daysToAdd = dayIndex === 0 ? 6 : dayIndex - 1
+              const shiftDate = startOfDay(addDays(currentWeek, daysToAdd))
+
+              if (!isBefore(shiftDate, patternStartDay) && !isAfter(shiftDate, patternEndDay) && !isBefore(shiftDate, today)) {
+                datesToGenerate.push(shiftDate)
+              }
+            }
+
+            currentWeek = addWeeks(currentWeek, 2) // Every other week
           }
-          currentDate = addWeeks(currentDate, 2)
+        } else {
+          // Legacy behavior: every other week on the same day as startDate
+          let currentDate = patternStartDay
+
+          while (!isAfter(currentDate, patternEndDay)) {
+            if (!isBefore(currentDate, today)) {
+              datesToGenerate.push(startOfDay(currentDate))
+            }
+            currentDate = addWeeks(currentDate, 2)
+          }
         }
       } else if (pattern.recurrenceType === "FIRST_OF_MONTH") {
         // First occurrence of dayOfWeek in each month

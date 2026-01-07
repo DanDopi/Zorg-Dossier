@@ -3,8 +3,11 @@
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import Link from "next/link"
 import DashboardLayout from "@/components/dashboard/DashboardLayout"
+import { Palette } from "lucide-react"
+import { CAREGIVER_COLORS } from "@/lib/constants/colors"
 
 interface User {
   id: string
@@ -41,6 +44,7 @@ interface ClientRelationship {
   status: "ACTIVE" | "INACTIVE"
   createdAt: string
   deactivatedAt?: string | null
+  clientColorPreference?: string | null
   client: ClientProfile
 }
 
@@ -82,6 +86,9 @@ export default function MijnClientenClient({ user, clients: clientsProp }: MijnC
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
   const [processingId, setProcessingId] = useState<string | null>(null)
+  const [editingColorForClient, setEditingColorForClient] = useState<string | null>(null)
+  const [selectedClientName, setSelectedClientName] = useState<string>("")
+  const [savingColor, setSavingColor] = useState(false)
 
   useEffect(() => {
     fetchData()
@@ -146,6 +153,50 @@ export default function MijnClientenClient({ user, clients: clientsProp }: MijnC
     } finally {
       setProcessingId(null)
     }
+  }
+
+  async function handleColorSelect(clientId: string, color: string | null) {
+    setSavingColor(true)
+    setError(null)
+
+    try {
+      const response = await fetch("/api/caregiver/client-color", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          clientId,
+          color,
+        }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || "Kon kleur niet opslaan")
+      }
+
+      // Update the local state
+      setClients(prevClients =>
+        prevClients.map(c =>
+          c.clientId === clientId
+            ? { ...c, clientColorPreference: color }
+            : c
+        )
+      )
+
+      setEditingColorForClient(null)
+      setSelectedClientName("")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kon kleur niet opslaan')
+    } finally {
+      setSavingColor(false)
+    }
+  }
+
+  function openColorPicker(clientId: string, clientName: string) {
+    setEditingColorForClient(clientId)
+    setSelectedClientName(clientName)
   }
 
   // Filter clients based on search query
@@ -361,7 +412,16 @@ export default function MijnClientenClient({ user, clients: clientsProp }: MijnC
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <h4 className="font-semibold text-lg">{relationship.client.name}</h4>
+                          <div className="flex items-center gap-2 mb-2">
+                            {relationship.clientColorPreference && (
+                              <div
+                                className="w-4 h-4 rounded-full border-2 border-gray-300 flex-shrink-0"
+                                style={{ backgroundColor: relationship.clientColorPreference }}
+                                title="Uw gekozen kleur voor deze cliënt"
+                              />
+                            )}
+                            <h4 className="font-semibold text-lg">{relationship.client.name}</h4>
+                          </div>
                           <p className="text-sm text-muted-foreground">
                             📧 {relationship.client.user.email}
                           </p>
@@ -382,6 +442,15 @@ export default function MijnClientenClient({ user, clients: clientsProp }: MijnC
                         </div>
 
                         <div className="ml-4 flex flex-col gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openColorPicker(relationship.clientId, relationship.client.name)}
+                            className="w-full"
+                          >
+                            <Palette className="h-4 w-4 mr-1" />
+                            Kleur
+                          </Button>
                           <Link href={`/dashboard/reports/new?client=${relationship.clientId}`}>
                             <Button size="sm" className="w-full">
                               Nieuw Rapport
@@ -436,6 +505,64 @@ export default function MijnClientenClient({ user, clients: clientsProp }: MijnC
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* Color Picker Dialog */}
+        {editingColorForClient && (
+          <Dialog open={!!editingColorForClient} onOpenChange={() => setEditingColorForClient(null)}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Kies Kleur voor {selectedClientName}</DialogTitle>
+                <DialogDescription>
+                  Selecteer een kleur om deze cliënt gemakkelijk te herkennen in uw agenda
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                {/* Color Grid */}
+                <div className="grid grid-cols-5 gap-3">
+                  {CAREGIVER_COLORS.map((color) => {
+                    const currentRelationship = clients.find(c => c.clientId === editingColorForClient)
+                    const isSelected = currentRelationship?.clientColorPreference === color.hex
+
+                    return (
+                      <button
+                        key={color.hex}
+                        className={`w-12 h-12 rounded-lg border-2 hover:scale-110 transition-transform ${
+                          isSelected
+                            ? "border-blue-600 ring-2 ring-blue-300"
+                            : "border-gray-300"
+                        }`}
+                        style={{ backgroundColor: color.hex }}
+                        onClick={() => handleColorSelect(editingColorForClient, color.hex)}
+                        title={color.name}
+                        disabled={savingColor}
+                      />
+                    )
+                  })}
+                </div>
+
+                {/* Reset Button */}
+                <div className="flex gap-2 border-t pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => handleColorSelect(editingColorForClient, null)}
+                    disabled={savingColor}
+                    className="flex-1"
+                  >
+                    {savingColor ? "Opslaan..." : "Standaard Kleur"}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setEditingColorForClient(null)}
+                    disabled={savingColor}
+                  >
+                    Annuleren
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         )}
       </div>
     </DashboardLayout>

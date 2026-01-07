@@ -19,6 +19,7 @@ interface Shift {
     id: string
     name: string
     color?: string | null
+    clientColorPreference?: string | null
   } | null
 }
 
@@ -26,10 +27,14 @@ interface ShiftCardProps {
   shift: Shift
   onClick?: () => void
   isReadOnly?: boolean
+  caregiverId?: string
 }
 
-export function ShiftCard({ shift, onClick, isReadOnly = false }: ShiftCardProps) {
-  const bgColor = shift.caregiver?.color || "#E5E7EB"
+export function ShiftCard({ shift, onClick, isReadOnly = false, caregiverId }: ShiftCardProps) {
+  // Only use custom color when caregiver is viewing their own calendar
+  const bgColor = caregiverId && shift.caregiver?.clientColorPreference
+    ? shift.caregiver.clientColorPreference
+    : (shift.shiftType?.color || shift.caregiver?.color || "#E5E7EB")
   const textColor = getContrastingTextColor(bgColor)
   const isUnfilled = !shift.caregiver
 

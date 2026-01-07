@@ -85,21 +85,46 @@ export default function RapporterenClient({ user }: RapporterenClientProps) {
     }
   }
 
+  // Group reports by date
+  function groupReportsByDate(reports: CareReport[]) {
+    const grouped: { [key: string]: CareReport[] } = {}
+
+    reports.forEach(report => {
+      const dateKey = new Date(report.reportDate).toLocaleDateString('nl-NL', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      })
+
+      if (!grouped[dateKey]) {
+        grouped[dateKey] = []
+      }
+      grouped[dateKey].push(report)
+    })
+
+    return grouped
+  }
+
   const isClient = user.role === "CLIENT"
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="space-y-6">
         {/* Welcome Section */}
-        <div>
-          <h2 className="text-3xl font-bold text-gray-900">
-            Zorgrapportages
-          </h2>
-          <p className="text-muted-foreground mt-1">
-            {isClient
-              ? "Bekijk alle rapportages van uw zorgverleners"
-              : "Bekijk en beheer al uw zorgrapportages"}
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-3xl font-bold text-gray-900">
+              Zorgrapportages
+            </h2>
+            <p className="text-muted-foreground mt-1">
+              {isClient
+                ? "Bekijk alle rapportages van uw zorgverleners"
+                : "Bekijk en beheer al uw zorgrapportages"}
+            </p>
+          </div>
+          <Link href="/dashboard/reports">
+            <Button variant="outline">Overzicht alle Rapportage's</Button>
+          </Link>
         </div>
 
         {error && (
@@ -117,7 +142,7 @@ export default function RapporterenClient({ user }: RapporterenClientProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <CardTitle>Alle Rapportages</CardTitle>
+              <CardTitle>Rapportages</CardTitle>
               <CardDescription>Bekijk al uw zorgrapportages</CardDescription>
             </CardHeader>
             <CardContent>
@@ -153,21 +178,14 @@ export default function RapporterenClient({ user }: RapporterenClientProps) {
         {/* Reports List */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-2xl">Alle Rapportages</CardTitle>
-                <CardDescription>
-                  {isClient
-                    ? "Rapportages van uw zorgverleners"
-                    : "Uw dagelijkse zorgrapportages"}
-                </CardDescription>
-              </div>
-              <Link href="/dashboard/reports">
-                <Button variant="outline" size="sm">Gedetailleerd overzicht</Button>
-              </Link>
-            </div>
+            <CardTitle className="text-2xl">Rapportages</CardTitle>
+            <CardDescription>
+              {isClient
+                ? "Rapportages van uw zorgverleners"
+                : "Uw dagelijkse zorgrapportages"}
+            </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="max-h-[600px] overflow-y-scroll">
             {isLoading ? (
               <div className="text-center py-8">
                 <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
@@ -183,55 +201,65 @@ export default function RapporterenClient({ user }: RapporterenClientProps) {
                 )}
               </div>
             ) : (
-              <div className="space-y-3">
-                {reports.map((report) => (
-                  <Link key={report.id} href={`/dashboard/reports/${report.id}`}>
-                    <Card className="border-l-4 border-l-blue-500 hover:shadow-md transition-shadow cursor-pointer">
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h4 className="font-semibold text-lg">
-                                {isClient
-                                  ? report.caregiver.name
-                                  : report.client.name}
-                              </h4>
-                              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                                {new Date(report.reportDate).toLocaleDateString('nl-NL', {
-                                  day: 'numeric',
-                                  month: 'short'
-                                })}
-                              </span>
-                            </div>
+              <div className="space-y-6">
+                {Object.entries(groupReportsByDate(reports)).map(([dateKey, dateReports]) => (
+                  <div key={dateKey} className="space-y-3">
+                    {/* Date Header/Separator */}
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 h-px bg-gray-300"></div>
+                      <h3 className="text-sm font-semibold text-gray-600 px-3 py-1 bg-gray-100 rounded-full">
+                        {dateKey}
+                      </h3>
+                      <div className="flex-1 h-px bg-gray-300"></div>
+                    </div>
 
-                            {isClient && (
-                              <p className="text-sm text-blue-600 mb-1">
-                                Door: {report.caregiver.name}
-                              </p>
-                            )}
+                    {/* Reports for this date */}
+                    <div className="space-y-3">
+                      {dateReports.map((report) => (
+                        <Link key={report.id} href={`/dashboard/reports/${report.id}`}>
+                          <Card className="border-l-4 border-l-blue-500 hover:shadow-md transition-shadow cursor-pointer">
+                            <CardContent className="p-4">
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <h4 className="font-semibold text-lg">
+                                      {isClient
+                                        ? report.caregiver.name
+                                        : report.client.name}
+                                    </h4>
+                                  </div>
 
-                            <p className="text-sm text-gray-700 line-clamp-2 mb-1">
-                              {report.content}
-                            </p>
+                                  {isClient && (
+                                    <p className="text-sm text-blue-600 mb-1">
+                                      Door: {report.caregiver.name}
+                                    </p>
+                                  )}
 
-                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                              {report.images && report.images.length > 0 && (
-                                <span className="flex items-center gap-1">
-                                  📷 {report.images.length}
-                                </span>
-                              )}
-                              <span>
-                                {new Date(report.createdAt).toLocaleDateString('nl-NL')}
-                              </span>
-                            </div>
-                          </div>
-                          <svg className="w-5 h-5 text-gray-400 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </Link>
+                                  <p className="text-sm text-gray-700 line-clamp-2 mb-1">
+                                    {report.content}
+                                  </p>
+
+                                  <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                                    {report.images && report.images.length > 0 && (
+                                      <span className="flex items-center gap-1">
+                                        📷 {report.images.length}
+                                      </span>
+                                    )}
+                                    <span>
+                                      {new Date(report.createdAt).toLocaleDateString('nl-NL')}
+                                    </span>
+                                  </div>
+                                </div>
+                                <svg className="w-5 h-5 text-gray-400 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             )}

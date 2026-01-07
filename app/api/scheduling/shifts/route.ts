@@ -68,6 +68,12 @@ export async function GET(request: NextRequest) {
                 email: true,
               },
             },
+            clientRelationships: {
+              select: {
+                clientId: true,
+                clientColorPreference: true,
+              },
+            },
           },
         },
         client: {
@@ -83,7 +89,29 @@ export async function GET(request: NextRequest) {
       orderBy: [{ date: "asc" }, { startTime: "asc" }],
     })
 
-    return NextResponse.json(shifts)
+    // Transform shifts to include clientColorPreference at caregiver level
+    const transformedShifts = shifts.map((shift) => {
+      if (!shift.caregiver) {
+        return shift
+      }
+
+      const { clientRelationships, ...caregiverWithoutRelationships } = shift.caregiver
+
+      // Find the relationship that matches this shift's client
+      const matchingRelationship = clientRelationships.find(
+        rel => rel.clientId === shift.clientId
+      )
+
+      return {
+        ...shift,
+        caregiver: {
+          ...caregiverWithoutRelationships,
+          clientColorPreference: matchingRelationship?.clientColorPreference || null,
+        },
+      }
+    })
+
+    return NextResponse.json(transformedShifts)
   } catch (error) {
     console.error("Error fetching shifts:", error)
     return NextResponse.json(

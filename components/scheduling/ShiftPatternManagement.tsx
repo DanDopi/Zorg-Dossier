@@ -42,6 +42,7 @@ interface Caregiver {
 interface ShiftPattern {
   id: string
   recurrenceType: "DAILY" | "WEEKLY" | "BIWEEKLY" | "FIRST_OF_MONTH" | "LAST_OF_MONTH"
+  daysOfWeek?: string | null
   startDate: Date
   endDate: Date | null
   isActive: boolean
@@ -107,12 +108,14 @@ export default function ShiftPatternManagement({
   }
 
   const [formData, setFormData] = useState({
-    caregiverId: caregivers[0]?.id || "",
+    caregiverId: "",
     shiftTypeId: shiftTypes[0]?.id || "",
     recurrenceType: "WEEKLY" as "DAILY" | "WEEKLY" | "BIWEEKLY" | "FIRST_OF_MONTH" | "LAST_OF_MONTH",
     startDate: format(new Date(), "yyyy-MM-dd"),
     endDate: getYearEndDate(),
   })
+
+  const [daysOfWeek, setDaysOfWeek] = useState<string[]>([])
 
   const [editFormData, setEditFormData] = useState({
     caregiverId: "",
@@ -121,6 +124,8 @@ export default function ShiftPatternManagement({
     startDate: "",
     endDate: "",
   })
+
+  const [editDaysOfWeek, setEditDaysOfWeek] = useState<string[]>([])
 
   useEffect(() => {
     fetchPatterns()
@@ -156,12 +161,19 @@ export default function ShiftPatternManagement({
       return
     }
 
+    // Validate daysOfWeek for WEEKLY/BIWEEKLY
+    if ((formData.recurrenceType === "WEEKLY" || formData.recurrenceType === "BIWEEKLY") && daysOfWeek.length === 0) {
+      alert("Selecteer minimaal één dag van de week")
+      return
+    }
+
     try {
       const response = await fetch("/api/scheduling/patterns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
+          daysOfWeek: (formData.recurrenceType === "WEEKLY" || formData.recurrenceType === "BIWEEKLY") ? daysOfWeek : null,
           endDate: formData.endDate || null,
         }),
       })
@@ -170,12 +182,13 @@ export default function ShiftPatternManagement({
         await fetchPatterns()
         setIsCreateDialogOpen(false)
         setFormData({
-          caregiverId: caregivers[0]?.id || "",
+          caregiverId: "",
           shiftTypeId: shiftTypes[0]?.id || "",
           recurrenceType: "WEEKLY",
           startDate: format(new Date(), "yyyy-MM-dd"),
           endDate: getYearEndDate(),
         })
+        setDaysOfWeek([])
 
         // Automatically generate shifts for the new pattern
         const generateResponse = await fetch("/api/scheduling/generate", {
@@ -236,6 +249,8 @@ export default function ShiftPatternManagement({
       startDate: format(pattern.startDate, "yyyy-MM-dd"),
       endDate: pattern.endDate ? format(pattern.endDate, "yyyy-MM-dd") : getYearEndDate(),
     })
+    // Populate daysOfWeek if it exists (will be array from API)
+    setEditDaysOfWeek(Array.isArray(pattern.daysOfWeek) ? pattern.daysOfWeek : [])
     setIsEditDialogOpen(true)
   }
 
@@ -247,6 +262,12 @@ export default function ShiftPatternManagement({
     if (editFormData.endDate && !validateEndDate(editFormData.endDate)) {
       const currentYear = new Date().getFullYear()
       alert(`Einddatum kan maximaal tot 31 december ${currentYear + 1}`)
+      return
+    }
+
+    // Validate daysOfWeek for WEEKLY/BIWEEKLY
+    if ((editFormData.recurrenceType === "WEEKLY" || editFormData.recurrenceType === "BIWEEKLY") && editDaysOfWeek.length === 0) {
+      alert("Selecteer minimaal één dag van de week")
       return
     }
 
@@ -267,6 +288,7 @@ export default function ShiftPatternManagement({
           caregiverId: editFormData.caregiverId,
           shiftTypeId: editFormData.shiftTypeId,
           recurrenceType: editFormData.recurrenceType,
+          daysOfWeek: (editFormData.recurrenceType === "WEEKLY" || editFormData.recurrenceType === "BIWEEKLY") ? editDaysOfWeek : null,
           startDate: editFormData.startDate,
           endDate: editFormData.endDate || null,
           regenerateShifts: true,
@@ -304,8 +326,25 @@ export default function ShiftPatternManagement({
     }
   }
 
-  const getRecurrenceLabel = (recurrenceType: string) => {
-    return RECURRENCE_TYPES.find((r) => r.value === recurrenceType)?.label || ""
+  const getRecurrenceLabel = (pattern: ShiftPattern) => {
+    const baseLabel = RECURRENCE_TYPES.find((r) => r.value === pattern.recurrenceType)?.label || ""
+
+    // If daysOfWeek exists, show which days (for WEEKLY/BIWEEKLY)
+    if (pattern.daysOfWeek && Array.isArray(pattern.daysOfWeek) && pattern.daysOfWeek.length > 0) {
+      const dayMap: { [key: string]: string } = {
+        monday: "Ma",
+        tuesday: "Di",
+        wednesday: "Wo",
+        thursday: "Do",
+        friday: "Vr",
+        saturday: "Za",
+        sunday: "Zo",
+      }
+      const dayLabels = pattern.daysOfWeek.map(d => dayMap[d] || d).join(", ")
+      return `${baseLabel} (${dayLabels})`
+    }
+
+    return baseLabel
   }
 
   if (loading) {
@@ -391,7 +430,7 @@ export default function ShiftPatternManagement({
                               {pattern.caregiver?.name || "Niet toegewezen"}
                             </p>
                             <p className="text-sm text-muted-foreground">
-                              {getRecurrenceLabel(pattern.recurrenceType)}
+                              {getRecurrenceLabel(pattern)}
                             </p>
                           </div>
                         </div>
@@ -449,15 +488,16 @@ export default function ShiftPatternManagement({
 
           <form onSubmit={handleCreatePattern} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="caregiver">Zorgverlener</Label>
+              <Label htmlFor="caregiver">Zorgverlener (optioneel)</Label>
               <Select
-                value={formData.caregiverId}
-                onValueChange={(value) => setFormData({ ...formData, caregiverId: value })}
+                value={formData.caregiverId || "unassigned"}
+                onValueChange={(value) => setFormData({ ...formData, caregiverId: value === "unassigned" ? "" : value })}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Selecteer zorgverlener..." />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="unassigned">Niet toegewezen</SelectItem>
                   {caregivers.map((cg) => (
                     <SelectItem key={cg.id} value={cg.id}>
                       {cg.name}
@@ -490,9 +530,13 @@ export default function ShiftPatternManagement({
               <Label htmlFor="recurrenceType">Herhaling</Label>
               <Select
                 value={formData.recurrenceType}
-                onValueChange={(value) =>
+                onValueChange={(value) => {
                   setFormData({ ...formData, recurrenceType: value as typeof formData.recurrenceType })
-                }
+                  // Clear daysOfWeek when switching away from WEEKLY/BIWEEKLY
+                  if (value !== "WEEKLY" && value !== "BIWEEKLY") {
+                    setDaysOfWeek([])
+                  }
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -506,6 +550,51 @@ export default function ShiftPatternManagement({
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Day of Week Selection */}
+            {(formData.recurrenceType === "WEEKLY" || formData.recurrenceType === "BIWEEKLY") && (
+              <div className="space-y-2">
+                <Label>Dagen van de week *</Label>
+                <p className="text-sm text-muted-foreground">
+                  Selecteer op welke dagen de dienst moet terugkeren
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: "monday", label: "Maandag" },
+                    { value: "tuesday", label: "Dinsdag" },
+                    { value: "wednesday", label: "Woensdag" },
+                    { value: "thursday", label: "Donderdag" },
+                    { value: "friday", label: "Vrijdag" },
+                    { value: "saturday", label: "Zaterdag" },
+                    { value: "sunday", label: "Zondag" },
+                  ].map((day) => (
+                    <div key={day.value} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id={`day-${day.value}`}
+                        checked={daysOfWeek.includes(day.value)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setDaysOfWeek([...daysOfWeek, day.value])
+                          } else {
+                            setDaysOfWeek(daysOfWeek.filter(d => d !== day.value))
+                          }
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      <label htmlFor={`day-${day.value}`} className="text-sm cursor-pointer">
+                        {day.label}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+                {daysOfWeek.length > 0 && (
+                  <p className="text-xs text-green-600">
+                    {daysOfWeek.length} dag{daysOfWeek.length > 1 ? "en" : ""} geselecteerd
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="startDate">Startdatum</Label>
@@ -558,15 +647,16 @@ export default function ShiftPatternManagement({
 
           <form onSubmit={handleUpdatePattern} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="edit-caregiver">Zorgverlener</Label>
+              <Label htmlFor="edit-caregiver">Zorgverlener (optioneel)</Label>
               <Select
-                value={editFormData.caregiverId}
-                onValueChange={(value) => setEditFormData({ ...editFormData, caregiverId: value })}
+                value={editFormData.caregiverId || "unassigned"}
+                onValueChange={(value) => setEditFormData({ ...editFormData, caregiverId: value === "unassigned" ? "" : value })}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Selecteer zorgverlener..." />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="unassigned">Niet toegewezen</SelectItem>
                   {caregivers.map((cg) => (
                     <SelectItem key={cg.id} value={cg.id}>
                       {cg.name}
@@ -599,9 +689,13 @@ export default function ShiftPatternManagement({
               <Label htmlFor="edit-recurrenceType">Herhaling</Label>
               <Select
                 value={editFormData.recurrenceType}
-                onValueChange={(value) =>
+                onValueChange={(value) => {
                   setEditFormData({ ...editFormData, recurrenceType: value as typeof editFormData.recurrenceType })
-                }
+                  // Clear daysOfWeek when switching away from WEEKLY/BIWEEKLY
+                  if (value !== "WEEKLY" && value !== "BIWEEKLY") {
+                    setEditDaysOfWeek([])
+                  }
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -615,6 +709,51 @@ export default function ShiftPatternManagement({
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Day of Week Selection for Edit Dialog */}
+            {(editFormData.recurrenceType === "WEEKLY" || editFormData.recurrenceType === "BIWEEKLY") && (
+              <div className="space-y-2">
+                <Label>Dagen van de week *</Label>
+                <p className="text-sm text-muted-foreground">
+                  Selecteer op welke dagen de dienst moet terugkeren
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: "monday", label: "Maandag" },
+                    { value: "tuesday", label: "Dinsdag" },
+                    { value: "wednesday", label: "Woensdag" },
+                    { value: "thursday", label: "Donderdag" },
+                    { value: "friday", label: "Vrijdag" },
+                    { value: "saturday", label: "Zaterdag" },
+                    { value: "sunday", label: "Zondag" },
+                  ].map((day) => (
+                    <div key={day.value} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id={`edit-day-${day.value}`}
+                        checked={editDaysOfWeek.includes(day.value)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setEditDaysOfWeek([...editDaysOfWeek, day.value])
+                          } else {
+                            setEditDaysOfWeek(editDaysOfWeek.filter(d => d !== day.value))
+                          }
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      <label htmlFor={`edit-day-${day.value}`} className="text-sm cursor-pointer">
+                        {day.label}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+                {editDaysOfWeek.length > 0 && (
+                  <p className="text-xs text-green-600">
+                    {editDaysOfWeek.length} dag{editDaysOfWeek.length > 1 ? "en" : ""} geselecteerd
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="edit-startDate">Startdatum</Label>

@@ -58,7 +58,13 @@ export async function GET(request: NextRequest) {
       orderBy: [{ startDate: "asc" }, { shiftType: { startTime: "asc" } }],
     })
 
-    return NextResponse.json(patterns)
+    // Parse daysOfWeek JSON strings to arrays
+    const patternsWithParsedDays = patterns.map(pattern => ({
+      ...pattern,
+      daysOfWeek: pattern.daysOfWeek ? JSON.parse(pattern.daysOfWeek) : null,
+    }))
+
+    return NextResponse.json(patternsWithParsedDays)
   } catch (error) {
     console.error("Error fetching shift patterns:", error)
     return NextResponse.json(
@@ -91,7 +97,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { caregiverId, shiftTypeId, recurrenceType, startDate, endDate } = body
+    const { caregiverId, shiftTypeId, recurrenceType, daysOfWeek, startDate, endDate } = body
 
     // Validate required fields (caregiverId is now optional)
     if (!shiftTypeId || !recurrenceType || !startDate) {
@@ -106,6 +112,14 @@ export async function POST(request: NextRequest) {
     if (!validRecurrenceTypes.includes(recurrenceType)) {
       return NextResponse.json(
         { error: "Ongeldig herhalingstype" },
+        { status: 400 }
+      )
+    }
+
+    // Validate daysOfWeek for WEEKLY/BIWEEKLY patterns
+    if ((recurrenceType === "WEEKLY" || recurrenceType === "BIWEEKLY") && (!daysOfWeek || daysOfWeek.length === 0)) {
+      return NextResponse.json(
+        { error: "Selecteer minimaal één dag van de week" },
         { status: 400 }
       )
     }
@@ -160,6 +174,7 @@ export async function POST(request: NextRequest) {
         caregiverId: caregiverId || null,
         shiftTypeId,
         recurrenceType,
+        daysOfWeek: daysOfWeek && daysOfWeek.length > 0 ? JSON.stringify(daysOfWeek) : null,
         startDate: new Date(startDate),
         endDate: endDate ? new Date(endDate) : null,
         createdBy: session.user.id,
@@ -176,7 +191,13 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json(pattern, { status: 201 })
+    // Parse daysOfWeek JSON string to array before returning
+    const patternWithParsedDays = {
+      ...pattern,
+      daysOfWeek: pattern.daysOfWeek ? JSON.parse(pattern.daysOfWeek) : null,
+    }
+
+    return NextResponse.json(patternWithParsedDays, { status: 201 })
   } catch (error) {
     console.error("Error creating shift pattern:", error)
     return NextResponse.json(
@@ -209,7 +230,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { id, isActive, endDate, caregiverId, shiftTypeId, recurrenceType, startDate, regenerateShifts } = body
+    const { id, isActive, endDate, caregiverId, shiftTypeId, recurrenceType, daysOfWeek, startDate, regenerateShifts } = body
 
     if (!id) {
       return NextResponse.json({ error: "Patroon ID is verplicht" }, { status: 400 })
@@ -259,6 +280,15 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // Validate daysOfWeek for WEEKLY/BIWEEKLY patterns
+    const finalRecurrenceType = recurrenceType || existingPattern.recurrenceType
+    if ((finalRecurrenceType === "WEEKLY" || finalRecurrenceType === "BIWEEKLY") && daysOfWeek !== undefined && (!daysOfWeek || daysOfWeek.length === 0)) {
+      return NextResponse.json(
+        { error: "Selecteer minimaal één dag van de week" },
+        { status: 400 }
+      )
+    }
+
     // Validate end date is not too far in the future (max 1 year ahead)
     if (endDate) {
       const maxDate = new Date(new Date().getFullYear() + 1, 11, 31, 23, 59, 59, 999)
@@ -296,6 +326,7 @@ export async function PUT(request: NextRequest) {
         ...(caregiverId && { caregiverId }),
         ...(shiftTypeId && { shiftTypeId }),
         ...(recurrenceType && { recurrenceType }),
+        ...(daysOfWeek !== undefined && { daysOfWeek: daysOfWeek && daysOfWeek.length > 0 ? JSON.stringify(daysOfWeek) : null }),
         ...(startDate && { startDate: new Date(startDate) }),
         ...(endDate !== undefined && { endDate: endDate ? new Date(endDate) : null }),
       },
@@ -311,8 +342,14 @@ export async function PUT(request: NextRequest) {
       },
     })
 
+    // Parse daysOfWeek JSON string to array before returning
+    const patternWithParsedDays = {
+      ...updatedPattern,
+      daysOfWeek: updatedPattern.daysOfWeek ? JSON.parse(updatedPattern.daysOfWeek) : null,
+    }
+
     return NextResponse.json({
-      pattern: updatedPattern,
+      pattern: patternWithParsedDays,
       deletedShifts: deletedCount,
     })
   } catch (error) {

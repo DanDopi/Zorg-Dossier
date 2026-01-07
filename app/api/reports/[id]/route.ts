@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
+import { validateFileSize } from "@/lib/fileValidation"
 
 // GET /api/reports/[id] - Get a single report
 export async function GET(
@@ -184,10 +185,11 @@ export async function PUT(
     for (let i = 0; i < 3; i++) {
       const image = formData.get(`image${i}`) as File | null
       if (image) {
-        // Check file size (5MB)
-        if (image.size > 5 * 1024 * 1024) {
+        // Check file size
+        const validation = await validateFileSize(image.size)
+        if (!validation.isValid) {
           return NextResponse.json(
-            { error: `Afbeelding ${i + 1} is te groot (max 5MB)` },
+            { error: `Afbeelding ${i + 1}: ${validation.error}` },
             { status: 400 }
           )
         }

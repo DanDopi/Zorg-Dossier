@@ -8,6 +8,7 @@ import ScheduleCalendar from "./ScheduleCalendar"
 import ShiftAssignmentModal from "./ShiftAssignmentModal"
 import CreateShiftDialog from "./CreateShiftDialog"
 import TimeOffManagement from "./TimeOffManagement"
+import RoosterOverviewStats from "./RoosterOverviewStats"
 import Link from "next/link"
 import { Settings, Plus, Repeat } from "lucide-react"
 
@@ -166,50 +167,7 @@ export default function RoosterClient({
         </TabsContent>
 
         <TabsContent value="overview">
-          <Card>
-            <CardHeader>
-              <CardTitle>Rooster Overzicht</CardTitle>
-              <CardDescription>
-                Statistieken en overzicht van uw rooster
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div>
-                  <h3 className="font-semibold mb-2">Zorgverleners</h3>
-                  <div className="space-y-2">
-                    {caregivers.map((caregiver) => (
-                      <div
-                        key={caregiver.id}
-                        className="flex items-center gap-3 p-2 rounded-lg bg-gray-50"
-                      >
-                        <div
-                          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold"
-                          style={{
-                            backgroundColor: caregiver.color || "#9CA3AF",
-                          }}
-                        >
-                          {caregiver.name
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")
-                            .toUpperCase()
-                            .slice(0, 2)}
-                        </div>
-                        <span>{caregiver.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {caregivers.length === 0 && (
-                  <p className="text-muted-foreground">
-                    U heeft nog geen zorgverleners uitgenodigd.
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          <RoosterOverviewStats clientId={clientId} />
         </TabsContent>
       </Tabs>
 

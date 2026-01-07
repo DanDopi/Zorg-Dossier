@@ -2,13 +2,6 @@
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import ScheduleCalendar from "./ScheduleCalendar"
 import TimeOffRequest from "./TimeOffRequest"
 import {
@@ -54,7 +47,6 @@ export default function MijnRoosterClient({
   caregiverId,
   clients,
 }: MijnRoosterClientProps) {
-  const [selectedClientId, setSelectedClientId] = useState<string>("all")
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [upcomingShifts, setUpcomingShifts] = useState<Shift[]>([])
@@ -94,9 +86,6 @@ export default function MijnRoosterClient({
     setIsModalOpen(true)
   }
 
-  const filteredCaregiverId =
-    selectedClientId === "all" ? caregiverId : undefined
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -106,30 +95,6 @@ export default function MijnRoosterClient({
           Bekijk uw ingeplande diensten
         </p>
       </div>
-
-      {/* Filter */}
-      {clients.length > 1 && (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <label className="text-sm font-medium">Filter per cliënt:</label>
-              <Select value={selectedClientId} onValueChange={setSelectedClientId}>
-                <SelectTrigger className="w-[250px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Alle cliënten</SelectItem>
-                  {clients.map((client) => (
-                    <SelectItem key={client.id} value={client.id}>
-                      {client.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Tabs for Schedule and Time-off */}
       <Tabs defaultValue="schedule" className="space-y-4">
@@ -192,7 +157,7 @@ export default function MijnRoosterClient({
 
           {/* Calendar */}
           <ScheduleCalendar
-            caregiverId={filteredCaregiverId || caregiverId}
+            caregiverId={caregiverId}
             isReadOnly
             onShiftClick={handleShiftClick}
           />

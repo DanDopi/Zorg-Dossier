@@ -7,6 +7,16 @@ import { Check, X, Clock, Calendar, AlertCircle } from "lucide-react"
 import { format } from "date-fns"
 import { nl } from "date-fns/locale"
 import { CaregiverBadge } from "@/components/ui/CaregiverBadge"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 
 interface TimeOffRequest {
   id: string
@@ -14,6 +24,7 @@ interface TimeOffRequest {
   startDate: Date
   endDate: Date
   reason?: string | null
+  reviewNotes?: string | null
   status: "PENDING" | "APPROVED" | "DENIED"
   isEmergency: boolean
   caregiver: {
@@ -43,7 +54,10 @@ const STATUS_LABELS = {
 export default function TimeOffManagement({ clientId }: TimeOffManagementProps) {
   const [requests, setRequests] = useState<TimeOffRequest[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<"all" | "pending" | "approved">("pending")
+  const [filter, setFilter] = useState<"all" | "pending" | "approved" | "denied">("pending")
+  const [isDenyDialogOpen, setIsDenyDialogOpen] = useState(false)
+  const [selectedRequestId, setSelectedRequestId] = useState<string>("")
+  const [reviewNotes, setReviewNotes] = useState("")
 
   useEffect(() => {
     fetchRequests()
@@ -51,7 +65,7 @@ export default function TimeOffManagement({ clientId }: TimeOffManagementProps) 
 
   const fetchRequests = async () => {
     try {
-      const response = await fetch(`/api/scheduling/time-off?clientId=${clientId}`)
+      const response = await fetch(`/api/scheduling/time-off?clientId=${clientId}&includeDismissed=true`)
       if (response.ok) {
         const data = await response.json()
         const requestsWithDates = data.map((r: TimeOffRequest) => ({
@@ -78,6 +92,17 @@ export default function TimeOffManagement({ clientId }: TimeOffManagementProps) 
       })
 
       if (response.ok) {
+        const data = await response.json()
+
+        // Show success message with shift information
+        if (data.affectedShifts > 0) {
+          alert(
+            `Verlofaanvraag goedgekeurd. ${data.affectedShifts} dienst${data.affectedShifts === 1 ? '' : 'en'} ${data.affectedShifts === 1 ? 'is' : 'zijn'} leeggemaakt en moet${data.affectedShifts === 1 ? '' : 'en'} opnieuw worden ingevuld.`
+          )
+        } else {
+          alert("Verlofaanvraag goedgekeurd.")
+        }
+
         await fetchRequests()
       } else {
         const errorData = await response.json()
@@ -88,8 +113,15 @@ export default function TimeOffManagement({ clientId }: TimeOffManagementProps) 
     }
   }
 
-  const handleDeny = async (id: string) => {
-    if (!confirm("Weet u zeker dat u deze aanvraag wilt afwijzen?")) {
+  const handleDeny = (id: string) => {
+    setSelectedRequestId(id)
+    setReviewNotes("")
+    setIsDenyDialogOpen(true)
+  }
+
+  const handleDenyConfirm = async () => {
+    if (!reviewNotes.trim()) {
+      alert("Geef een reden voor afwijzing op")
       return
     }
 
@@ -97,11 +129,18 @@ export default function TimeOffManagement({ clientId }: TimeOffManagementProps) 
       const response = await fetch("/api/scheduling/time-off", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, status: "DENIED" }),
+        body: JSON.stringify({
+          id: selectedRequestId,
+          status: "DENIED",
+          reviewNotes: reviewNotes.trim()
+        }),
       })
 
       if (response.ok) {
         await fetchRequests()
+        setIsDenyDialogOpen(false)
+        setReviewNotes("")
+        setSelectedRequestId("")
       } else {
         const errorData = await response.json()
         alert(`Fout: ${errorData.error}`)
@@ -136,6 +175,7 @@ export default function TimeOffManagement({ clientId }: TimeOffManagementProps) 
   const filteredRequests = requests.filter((r) => {
     if (filter === "pending") return r.status === "PENDING"
     if (filter === "approved") return r.status === "APPROVED"
+    if (filter === "denied") return r.status === "DENIED"
     return true
   })
 
@@ -190,6 +230,12 @@ export default function TimeOffManagement({ clientId }: TimeOffManagementProps) 
           Goedgekeurd ({requests.filter((r) => r.status === "APPROVED").length})
         </Button>
         <Button
+          variant={filter === "denied" ? "default" : "outline"}
+          onClick={() => setFilter("denied")}
+        >
+          Afgewezen ({requests.filter((r) => r.status === "DENIED").length})
+        </Button>
+        <Button
           variant={filter === "all" ? "default" : "outline"}
           onClick={() => setFilter("all")}
         >
@@ -207,7 +253,9 @@ export default function TimeOffManagement({ clientId }: TimeOffManagementProps) 
                 ? "Geen aanvragen in afwachting"
                 : filter === "approved"
                   ? "Geen goedgekeurde aanvragen"
-                  : "Geen verlofaanvragen"}
+                  : filter === "denied"
+                    ? "Geen afgewezen aanvragen"
+                    : "Geen verlofaanvragen"}
             </p>
           </CardContent>
         </Card>
@@ -259,6 +307,13 @@ export default function TimeOffManagement({ clientId }: TimeOffManagementProps) 
                         </div>
                       )}
 
+                      {request.status === "DENIED" && request.reviewNotes && (
+                        <div className="bg-red-50 border border-red-200 rounded p-3 mt-2">
+                          <p className="text-xs font-semibold text-red-900 mb-1">Reden van afwijzing:</p>
+                          <p className="text-sm text-red-800">{request.reviewNotes}</p>
+                        </div>
+                      )}
+
                       {request.requestType === "SICK_LEAVE" && request.isEmergency && (
                         <div className="bg-red-50 border border-red-200 rounded p-3 mt-2">
                           <p className="text-sm text-red-800">
@@ -303,6 +358,57 @@ export default function TimeOffManagement({ clientId }: TimeOffManagementProps) 
           ))}
         </div>
       )}
+
+      {/* Deny Request Dialog */}
+      <Dialog open={isDenyDialogOpen} onOpenChange={setIsDenyDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Verlofaanvraag Afwijzen</DialogTitle>
+            <DialogDescription>
+              Geef een reden op waarom u deze aanvraag afwijst. De zorgverlener ontvangt deze informatie per email.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="reviewNotes">Reden van afwijzing *</Label>
+              <Textarea
+                id="reviewNotes"
+                placeholder="Bijv. Deze periode past niet in de planning, vervanging niet beschikbaar..."
+                value={reviewNotes}
+                onChange={(e) => setReviewNotes(e.target.value)}
+                rows={4}
+                required
+              />
+              <p className="text-sm text-muted-foreground">
+                Deze reden wordt per email naar de zorgverlener gestuurd.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsDenyDialogOpen(false)
+                setReviewNotes("")
+                setSelectedRequestId("")
+              }}
+            >
+              Annuleren
+            </Button>
+            <Button
+              type="button"
+              onClick={handleDenyConfirm}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              <X className="mr-1 h-4 w-4" />
+              Afwijzen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

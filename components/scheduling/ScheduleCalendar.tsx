@@ -40,6 +40,7 @@ interface Shift {
     id: string
     name: string
     color?: string | null
+    clientColorPreference?: string | null
   } | null
   client?: {
     id: string
@@ -154,6 +155,7 @@ export default function ScheduleCalendar({
                     shift={shift}
                     onClick={() => onShiftClick?.(shift)}
                     isReadOnly={isReadOnly}
+                    caregiverId={caregiverId}
                   />
                 ))}
               </div>
@@ -210,21 +212,52 @@ export default function ScheduleCalendar({
                   </div>
 
                   <div className="space-y-1">
-                    {dayShifts.slice(0, 3).map((shift) => (
-                      <div
-                        key={shift.id}
-                        className="text-xs p-1 rounded cursor-pointer hover:opacity-80"
-                        style={{
-                          backgroundColor: shift.caregiver?.color || "#E5E7EB",
-                          color: shift.caregiver?.color
-                            ? "#FFFFFF"
-                            : "#000000",
-                        }}
-                        onClick={() => onShiftClick?.(shift)}
-                      >
-                        {shift.shiftType.name}
-                      </div>
-                    ))}
+                    {dayShifts.slice(0, 3).map((shift) => {
+                      const shiftDate = new Date(shift.date)
+                      const today = new Date()
+                      today.setHours(0, 0, 0, 0)
+                      shiftDate.setHours(0, 0, 0, 0)
+                      const isPastShift = shiftDate < today
+
+                      return (
+                        <div
+                          key={shift.id}
+                          className="text-xs p-1 rounded cursor-pointer hover:opacity-80 relative"
+                          style={{
+                            backgroundColor: shift.caregiver
+                              ? (caregiverId && shift.caregiver.clientColorPreference
+                                  ? shift.caregiver.clientColorPreference
+                                  : shift.shiftType.color)
+                              : "#9CA3AF",
+                            color: "#FFFFFF",
+                          }}
+                          onClick={() => onShiftClick?.(shift)}
+                        >
+                          <div className="font-medium">{shift.shiftType.name}</div>
+                          <div className="text-[10px] opacity-90">
+                            {shift.startTime} - {shift.endTime}
+                          </div>
+                          {caregiverId ? (
+                            shift.client && (
+                              <div className="text-[10px] opacity-90 mt-0.5">
+                                {shift.client.name}
+                              </div>
+                            )
+                          ) : (
+                            shift.caregiver && (
+                              <div className="text-[10px] opacity-90 mt-0.5">
+                                {shift.caregiver.name}
+                              </div>
+                            )
+                          )}
+                          {(shift.status === "COMPLETED" || isPastShift) && (
+                            <div className="absolute top-0.5 right-0.5 text-white font-bold text-xs">
+                              ✓
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                     {dayShifts.length > 3 && (
                       <div className="text-xs text-gray-500">
                         +{dayShifts.length - 3} meer
@@ -299,12 +332,8 @@ export default function ScheduleCalendar({
       {/* Legend */}
       <div className="flex items-center gap-4 text-sm text-muted-foreground">
         <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-gray-200 border-2 border-dashed border-gray-400 rounded"></div>
+          <div className="w-4 h-4 bg-gray-400 border-2 border-dashed border-gray-600 rounded"></div>
           <span>Niet ingevuld</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-blue-500 rounded"></div>
-          <span>Ingevuld</span>
         </div>
         <div className="flex items-center gap-2">
           <span>✓</span>

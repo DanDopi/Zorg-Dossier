@@ -130,7 +130,7 @@ export default function AdminDashboard({ user }: AdminDashboardProps) {
         </div>
 
         {/* Admin Actions */}
-        <div className="grid md:grid-cols-3 gap-4">
+        <div className="grid md:grid-cols-2 gap-4">
           <Card className="hover:shadow-lg transition-shadow">
             <CardHeader>
               <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-2">
@@ -142,26 +142,11 @@ export default function AdminDashboard({ user }: AdminDashboardProps) {
               <CardDescription>Beheer alle gebruikers</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button className="w-full" variant="outline" disabled>
-                Binnenkort Beschikbaar
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-2">
-                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <CardTitle>Rapporten Overzicht</CardTitle>
-              <CardDescription>Bekijk alle rapporten</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button className="w-full" variant="outline" disabled>
-                Binnenkort Beschikbaar
-              </Button>
+              <Link href="/dashboard/admin/users">
+                <Button className="w-full" variant="outline">
+                  Beheer Gebruikers
+                </Button>
+              </Link>
             </CardContent>
           </Card>
 
@@ -177,48 +162,14 @@ export default function AdminDashboard({ user }: AdminDashboardProps) {
               <CardDescription>Systeeminstellingen</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button className="w-full" variant="outline" disabled>
-                Binnenkort Beschikbaar
-              </Button>
+              <Link href="/dashboard/admin/settings">
+                <Button className="w-full" variant="outline">
+                  Configureer Systeem
+                </Button>
+              </Link>
             </CardContent>
           </Card>
         </div>
-
-        {/* Info Card */}
-        <Card className="bg-blue-50 border-blue-200">
-          <CardHeader>
-            <CardTitle>Admin Functionaliteit</CardTitle>
-            <CardDescription>Deze functies worden in een latere fase toegevoegd</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li className="flex items-center">
-                <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Gebruikersbeheer (toevoegen, bewerken, verwijderen)
-              </li>
-              <li className="flex items-center">
-                <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Uitnodigingsbeheer voor nieuwe admins
-              </li>
-              <li className="flex items-center">
-                <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Rapportage overzichten en statistieken
-              </li>
-              <li className="flex items-center">
-                <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Systeemconfiguratie en instellingen
-              </li>
-            </ul>
-          </CardContent>
-        </Card>
       </div>
     </DashboardLayout>
   )

@@ -59,6 +59,7 @@ export default function CreateShiftDialog({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [createPattern, setCreatePattern] = useState(false)
+  const [daysOfWeek, setDaysOfWeek] = useState<string[]>([])
 
   const getYearEndDate = () => {
     const yearEnd = new Date(new Date().getFullYear(), 11, 31)
@@ -94,31 +95,47 @@ export default function CreateShiftDialog({
 
   const selectedShiftType = shiftTypes.find((st) => st.id === formData.shiftTypeId)
 
+  const handlePatternToggle = (checked: boolean) => {
+    setCreatePattern(checked)
+    if (!checked) {
+      setDaysOfWeek([]) // Clear day selection when pattern is disabled
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
 
-    try {
-      // Step 1: Create the shift
-      const shiftResponse = await fetch("/api/scheduling/shifts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clientId,
-          shiftTypeId: formData.shiftTypeId,
-          date: formData.date,
-          startTime: selectedShiftType?.startTime,
-          endTime: selectedShiftType?.endTime,
-          caregiverId: formData.caregiverId === "unassigned" ? null : formData.caregiverId,
-          internalNotes: formData.internalNotes || null,
-          instructionNotes: formData.instructionNotes || null,
-        }),
-      })
+    // Validate daysOfWeek for WEEKLY/BIWEEKLY patterns
+    if (createPattern && (patternData.recurrenceType === "WEEKLY" || patternData.recurrenceType === "BIWEEKLY") && daysOfWeek.length === 0) {
+      setError("Selecteer minimaal één dag van de week voor het patroon")
+      setLoading(false)
+      return
+    }
 
-      if (!shiftResponse.ok) {
-        const data = await shiftResponse.json()
-        throw new Error(data.error || "Fout bij aanmaken dienst")
+    try {
+      // Step 1: Create the shift (only if NOT creating a pattern)
+      if (!createPattern) {
+        const shiftResponse = await fetch("/api/scheduling/shifts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clientId,
+            shiftTypeId: formData.shiftTypeId,
+            date: formData.date,
+            startTime: selectedShiftType?.startTime,
+            endTime: selectedShiftType?.endTime,
+            caregiverId: formData.caregiverId === "unassigned" ? null : formData.caregiverId,
+            internalNotes: formData.internalNotes || null,
+            instructionNotes: formData.instructionNotes || null,
+          }),
+        })
+
+        if (!shiftResponse.ok) {
+          const data = await shiftResponse.json()
+          throw new Error(data.error || "Fout bij aanmaken dienst")
+        }
       }
 
       // Step 2: If pattern is requested, create the pattern
@@ -130,6 +147,7 @@ export default function CreateShiftDialog({
             caregiverId: formData.caregiverId === "unassigned" ? null : formData.caregiverId,
             shiftTypeId: formData.shiftTypeId,
             recurrenceType: patternData.recurrenceType,
+            daysOfWeek: daysOfWeek.length > 0 ? daysOfWeek : null,
             startDate: patternData.startDate,
             endDate: patternData.endDate || null,
           }),
@@ -180,6 +198,7 @@ export default function CreateShiftDialog({
       endDate: getYearEndDate(),
     })
     setCreatePattern(false)
+    setDaysOfWeek([]) // Clear day selection
     setError(null)
     onClose()
   }
@@ -208,8 +227,15 @@ export default function CreateShiftDialog({
               type="date"
               value={formData.date}
               onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-              required
+              disabled={createPattern}
+              className={createPattern ? "opacity-50 cursor-not-allowed" : ""}
+              required={!createPattern}
             />
+            {createPattern && (
+              <p className="text-xs text-muted-foreground">
+                Bij een terugkerend patroon wordt de patroon startdatum gebruikt
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -281,7 +307,7 @@ export default function CreateShiftDialog({
               <Checkbox
                 id="createPattern"
                 checked={createPattern}
-                onCheckedChange={(checked) => setCreatePattern(checked as boolean)}
+                onCheckedChange={(checked) => handlePatternToggle(checked as boolean)}
               />
               <Label
                 htmlFor="createPattern"
@@ -300,9 +326,13 @@ export default function CreateShiftDialog({
                   <Label htmlFor="recurrenceType">Herhaling</Label>
                   <Select
                     value={patternData.recurrenceType}
-                    onValueChange={(value) =>
+                    onValueChange={(value) => {
                       setPatternData({ ...patternData, recurrenceType: value as typeof patternData.recurrenceType })
-                    }
+                      // Clear daysOfWeek when switching away from WEEKLY/BIWEEKLY
+                      if (value !== "WEEKLY" && value !== "BIWEEKLY") {
+                        setDaysOfWeek([])
+                      }
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -320,6 +350,51 @@ export default function CreateShiftDialog({
                   </p>
                 </div>
 
+                {/* Day of Week Selection for WEEKLY/BIWEEKLY */}
+                {(patternData.recurrenceType === "WEEKLY" || patternData.recurrenceType === "BIWEEKLY") && (
+                  <div className="space-y-2">
+                    <Label>Dagen van de week *</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Selecteer op welke dagen de dienst moet terugkeren
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { value: "monday", label: "Maandag" },
+                        { value: "tuesday", label: "Dinsdag" },
+                        { value: "wednesday", label: "Woensdag" },
+                        { value: "thursday", label: "Donderdag" },
+                        { value: "friday", label: "Vrijdag" },
+                        { value: "saturday", label: "Zaterdag" },
+                        { value: "sunday", label: "Zondag" },
+                      ].map((day) => (
+                        <div key={day.value} className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            id={`shift-day-${day.value}`}
+                            checked={daysOfWeek.includes(day.value)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setDaysOfWeek([...daysOfWeek, day.value])
+                              } else {
+                                setDaysOfWeek(daysOfWeek.filter(d => d !== day.value))
+                              }
+                            }}
+                            className="rounded border-gray-300"
+                          />
+                          <label htmlFor={`shift-day-${day.value}`} className="text-sm cursor-pointer">
+                            {day.label}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                    {daysOfWeek.length > 0 && (
+                      <p className="text-xs text-green-600">
+                        {daysOfWeek.length} dag{daysOfWeek.length > 1 ? "en" : ""} geselecteerd
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="patternStartDate">Patroon Startdatum</Label>
                   <Input
@@ -330,9 +405,15 @@ export default function CreateShiftDialog({
                       setPatternData({ ...patternData, startDate: e.target.value })
                     }
                   />
-                  <p className="text-xs text-muted-foreground">
-                    De dag van de week wordt bepaald door de startdatum
-                  </p>
+                  {(patternData.recurrenceType === "WEEKLY" || patternData.recurrenceType === "BIWEEKLY") && daysOfWeek.length > 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Diensten worden aangemaakt op de geselecteerde dagen vanaf deze datum
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      De dag van de week wordt bepaald door de startdatum
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
