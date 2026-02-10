@@ -61,6 +61,8 @@ model User {
   email             String    @unique
   password          String
   role              UserRole
+  name              String?
+  address           String?
   emailVerified     DateTime?
   resetToken        String?
   resetTokenExpiry  DateTime?
@@ -126,6 +128,10 @@ model ClientProfile {
   timeOffRequests TimeOffRequest[]
   schedulingSettings SchedulingSettings?
 
+  // Nursing procedures (Verpleegtechnische handelingen)
+  nursingProcedures    NursingProcedure[]
+  nursingProcedureLogs NursingProcedureLog[]
+
   @@index([userId])
 }
 
@@ -171,6 +177,10 @@ model CaregiverProfile {
   shifts        Shift[]
   shiftPatterns ShiftPattern[]
   timeOffRequests TimeOffRequest[]
+
+  // Nursing procedures (Verpleegtechnische handelingen)
+  assignedNursingProcedures NursingProcedure[] @relation("AssignedNursingProcedures")
+  nursingProcedureLogs      NursingProcedureLog[] @relation("NursingProcedureLogs")
 
   @@index([userId])
   @@index([name])
@@ -623,6 +633,17 @@ model Shift {
   internalNotes   String?  @db.Text // Client-only notes
   instructionNotes String? @db.Text // Visible to assigned caregiver
 
+  // Client verification of past shifts
+  clientVerified   Boolean   @default(false)
+  clientVerifiedAt DateTime?
+
+  // Caregiver time correction request
+  actualStartTime       String?   // Caregiver-reported actual start time (HH:mm)
+  actualEndTime         String?   // Caregiver-reported actual end time (HH:mm)
+  caregiverNote         String?   @db.Text // Optional explanation from caregiver
+  timeCorrectionStatus  String?   // null = no correction, "PENDING", "ACKNOWLEDGED"
+  timeCorrectionAt      DateTime? // When the caregiver submitted the correction
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   createdBy       String   // User ID who created this shift
@@ -852,4 +873,52 @@ model WoundCareReport {
   @@index([caregiverId])
   @@index([reportDate])
   @@index([clientId, reportDate])
+}
+
+// Verpleegtechnische Handelingen (Nursing Technical Procedures)
+model NursingProcedure {
+  id                  String   @id @default(cuid())
+  clientId            String
+  client              ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  name                String          // e.g. "Katheter Wissel", "Canule Wissel"
+  description         String? @db.Text // Optional detailed instructions
+  frequencyDays       Int             // Days between procedures (e.g. 180 = 6 months)
+  nextDueDate         DateTime        // When next procedure is due
+
+  assignedCaregiverId String?
+  assignedCaregiver   CaregiverProfile? @relation("AssignedNursingProcedures", fields: [assignedCaregiverId], references: [id])
+
+  isActive            Boolean  @default(true)
+  createdBy           String   // User ID who created this
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  logs                NursingProcedureLog[]
+
+  @@index([clientId])
+  @@index([nextDueDate])
+  @@index([isActive])
+}
+
+model NursingProcedureLog {
+  id              String   @id @default(cuid())
+  procedureId     String
+  procedure       NursingProcedure @relation(fields: [procedureId], references: [id], onDelete: Cascade)
+
+  clientId        String
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  performedBy     String          // Caregiver profile ID
+  caregiver       CaregiverProfile @relation("NursingProcedureLogs", fields: [performedBy], references: [id])
+
+  performedAt     DateTime        // Actual date/time it was done
+  notes           String? @db.Text // Observations, complications, special info
+
+  createdAt       DateTime @default(now())
+
+  @@index([procedureId])
+  @@index([clientId])
+  @@index([performedBy])
+  @@index([performedAt])
 }

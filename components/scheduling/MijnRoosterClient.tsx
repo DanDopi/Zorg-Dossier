@@ -12,8 +12,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { formatFullDate } from "@/lib/utils/calendar"
-import { Calendar, Clock, FileText } from "lucide-react"
+import { Calendar, Clock, FileText, CheckCircle } from "lucide-react"
 
 interface Client {
   id: string
@@ -28,6 +32,11 @@ interface Shift {
   status: string
   internalNotes?: string | null
   instructionNotes?: string | null
+  actualStartTime?: string | null
+  actualEndTime?: string | null
+  caregiverNote?: string | null
+  timeCorrectionStatus?: string | null
+  timeCorrectionAt?: string | null
   shiftType: {
     id: string
     name: string
@@ -50,10 +59,25 @@ export default function MijnRoosterClient({
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [upcomingShifts, setUpcomingShifts] = useState<Shift[]>([])
+  const [correctionStartTime, setCorrectionStartTime] = useState("")
+  const [correctionEndTime, setCorrectionEndTime] = useState("")
+  const [correctionNote, setCorrectionNote] = useState("")
+  const [isSubmittingCorrection, setIsSubmittingCorrection] = useState(false)
+  const [showCorrectionForm, setShowCorrectionForm] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     fetchUpcomingShifts()
-  }, [caregiverId])
+  }, [caregiverId, refreshKey])
+
+  useEffect(() => {
+    if (selectedShift) {
+      setCorrectionStartTime(selectedShift.actualStartTime || selectedShift.startTime)
+      setCorrectionEndTime(selectedShift.actualEndTime || selectedShift.endTime)
+      setCorrectionNote(selectedShift.caregiverNote || "")
+      setShowCorrectionForm(false)
+    }
+  }, [selectedShift])
 
   const fetchUpcomingShifts = async () => {
     try {
@@ -85,6 +109,50 @@ export default function MijnRoosterClient({
     setSelectedShift(shift)
     setIsModalOpen(true)
   }
+
+  const handleSubmitCorrection = async () => {
+    if (!selectedShift) return
+    setIsSubmittingCorrection(true)
+    try {
+      const response = await fetch("/api/scheduling/shifts/time-correction", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          shiftId: selectedShift.id,
+          actualStartTime: correctionStartTime,
+          actualEndTime: correctionEndTime,
+          caregiverNote: correctionNote || undefined,
+        }),
+      })
+      if (response.ok) {
+        setSelectedShift({
+          ...selectedShift,
+          actualStartTime: correctionStartTime,
+          actualEndTime: correctionEndTime,
+          caregiverNote: correctionNote,
+          timeCorrectionStatus: "PENDING",
+          timeCorrectionAt: new Date().toISOString(),
+        })
+        setShowCorrectionForm(false)
+        setRefreshKey((prev) => prev + 1)
+      } else {
+        const errorData = await response.json()
+        alert(`Fout: ${errorData.error}`)
+      }
+    } catch {
+      alert("Er is een fout opgetreden")
+    } finally {
+      setIsSubmittingCorrection(false)
+    }
+  }
+
+  const isPastShift = selectedShift ? (() => {
+    const d = new Date(selectedShift.date)
+    d.setHours(0, 0, 0, 0)
+    const t = new Date()
+    t.setHours(0, 0, 0, 0)
+    return d < t
+  })() : false
 
   return (
     <div className="space-y-6">
@@ -171,7 +239,7 @@ export default function MijnRoosterClient({
       {/* Shift Detail Modal */}
       {selectedShift && (
         <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-          <DialogContent>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Dienst Details</DialogTitle>
               <DialogDescription>
@@ -198,7 +266,7 @@ export default function MijnRoosterClient({
 
               <div>
                 <label className="text-sm font-medium text-muted-foreground">
-                  Tijd
+                  Ingeplande tijd
                 </label>
                 <p className="text-base mt-1">
                   {selectedShift.startTime} - {selectedShift.endTime}
@@ -217,12 +285,126 @@ export default function MijnRoosterClient({
                 </div>
               )}
 
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm text-blue-900">
-                  <strong>Let op:</strong> Neem bij vragen of problemen contact
-                  op met uw cliënt.
-                </p>
-              </div>
+              {/* Correction acknowledged by client */}
+              {selectedShift.timeCorrectionStatus === "ACKNOWLEDGED" && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <span className="text-sm font-semibold text-green-900">
+                      Tijden aangepast door cliënt
+                    </span>
+                  </div>
+                  <p className="text-sm text-green-800">
+                    Uw correctie is verwerkt. De dienst is aangepast naar {selectedShift.startTime} - {selectedShift.endTime}.
+                  </p>
+                </div>
+              )}
+
+              {/* Correction pending */}
+              {selectedShift.timeCorrectionStatus === "PENDING" && !showCorrectionForm && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Clock className="w-4 h-4 text-amber-600" />
+                    <span className="text-sm font-semibold text-amber-900">
+                      Correctie in behandeling
+                    </span>
+                  </div>
+                  <p className="text-sm text-amber-800">
+                    U heeft afwijkende tijden doorgegeven: {selectedShift.actualStartTime} - {selectedShift.actualEndTime}
+                  </p>
+                  {selectedShift.caregiverNote && (
+                    <p className="text-sm text-amber-700 mt-1 italic">
+                      &quot;{selectedShift.caregiverNote}&quot;
+                    </p>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => setShowCorrectionForm(true)}
+                  >
+                    Correctie wijzigen
+                  </Button>
+                </div>
+              )}
+
+              {/* Button to start correction - only for past shifts without existing correction */}
+              {isPastShift && !showCorrectionForm && !selectedShift.timeCorrectionStatus && (
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => setShowCorrectionForm(true)}
+                >
+                  <Clock className="mr-2 h-4 w-4" />
+                  Afwijkende tijden doorgeven
+                </Button>
+              )}
+
+              {/* Correction form */}
+              {showCorrectionForm && (
+                <div className="border rounded-lg p-4 space-y-3 bg-gray-50">
+                  <h4 className="font-semibold text-sm">Werkelijke tijden doorgeven</h4>
+                  <p className="text-xs text-muted-foreground">
+                    Geef de tijden door waarop u daadwerkelijk heeft gewerkt. De cliënt ontvangt een melding.
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label htmlFor="corrStartTime">Starttijd</Label>
+                      <Input
+                        id="corrStartTime"
+                        type="time"
+                        value={correctionStartTime}
+                        onChange={(e) => setCorrectionStartTime(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="corrEndTime">Eindtijd</Label>
+                      <Input
+                        id="corrEndTime"
+                        type="time"
+                        value={correctionEndTime}
+                        onChange={(e) => setCorrectionEndTime(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="corrNote">Toelichting (optioneel)</Label>
+                    <Textarea
+                      id="corrNote"
+                      placeholder="Bijv. later begonnen door verkeersproblemen..."
+                      value={correctionNote}
+                      onChange={(e) => setCorrectionNote(e.target.value)}
+                      rows={2}
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowCorrectionForm(false)}
+                    >
+                      Annuleren
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleSubmitCorrection}
+                      disabled={isSubmittingCorrection}
+                    >
+                      {isSubmittingCorrection ? "Bezig..." : "Correctie indienen"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Contact info - for future shifts without correction */}
+              {!showCorrectionForm && !selectedShift.timeCorrectionStatus && !isPastShift && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-sm text-blue-900">
+                    <strong>Let op:</strong> Neem bij vragen of problemen contact
+                    op met uw cliënt.
+                  </p>
+                </div>
+              )}
             </div>
           </DialogContent>
         </Dialog>

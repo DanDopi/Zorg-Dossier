@@ -6,6 +6,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { TimeOffNotificationPanel } from "@/components/dashboard/TimeOffNotificationPanel"
+import { AlertCircle, Clock } from "lucide-react"
+
+interface PendingCorrection {
+  id: string
+  date: string
+  startTime: string
+  endTime: string
+  actualStartTime: string
+  actualEndTime: string
+  caregiverNote?: string | null
+  timeCorrectionAt: string
+  shiftType: { name: string }
+  caregiver: { name: string }
+}
 
 interface Report {
   id: string
@@ -33,10 +47,13 @@ export default function ClientDashboard({ user }: ClientDashboardProps) {
   const [isLoadingReports, setIsLoadingReports] = useState(true)
   const [timeOffNotifications, setTimeOffNotifications] = useState<any[]>([])
   const [isLoadingTimeOff, setIsLoadingTimeOff] = useState(true)
+  const [pendingCorrections, setPendingCorrections] = useState<PendingCorrection[]>([])
+  const [isLoadingCorrections, setIsLoadingCorrections] = useState(true)
 
   useEffect(() => {
     fetchRecentReports()
     fetchTimeOffNotifications()
+    fetchPendingCorrections()
   }, [])
 
   async function fetchRecentReports() {
@@ -50,6 +67,20 @@ export default function ClientDashboard({ user }: ClientDashboardProps) {
       console.error("Failed to fetch reports:", error)
     } finally {
       setIsLoadingReports(false)
+    }
+  }
+
+  async function fetchPendingCorrections() {
+    try {
+      const response = await fetch("/api/scheduling/shifts/pending-corrections")
+      if (response.ok) {
+        const data = await response.json()
+        setPendingCorrections(data)
+      }
+    } catch (error) {
+      console.error("Failed to fetch pending corrections:", error)
+    } finally {
+      setIsLoadingCorrections(false)
     }
   }
 
@@ -149,6 +180,68 @@ export default function ClientDashboard({ user }: ClientDashboardProps) {
           onDeny={handleDeny}
           isLoading={isLoadingTimeOff}
         />
+
+        {/* Pending Time Corrections */}
+        {!isLoadingCorrections && pendingCorrections.length > 0 && (
+          <Card className="border-orange-300 bg-orange-50">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-orange-900">
+                <AlertCircle className="h-5 w-5 text-orange-600" />
+                Tijdcorrecties ({pendingCorrections.length})
+              </CardTitle>
+              <CardDescription className="text-orange-800">
+                Zorgverleners hebben afwijkende werktijden doorgegeven
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {pendingCorrections.map((correction) => (
+                <div
+                  key={correction.id}
+                  className="bg-white rounded-lg p-3 border border-orange-200"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-sm">
+                          {correction.caregiver.name}
+                        </span>
+                        <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
+                          {correction.shiftType.name}
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground mb-1">
+                        {new Date(correction.date).toLocaleDateString("nl-NL", {
+                          weekday: "long",
+                          day: "numeric",
+                          month: "long",
+                        })}
+                      </div>
+                      <div className="flex items-center gap-3 text-sm">
+                        <span className="text-muted-foreground line-through">
+                          {correction.startTime} - {correction.endTime}
+                        </span>
+                        <span className="font-medium text-orange-900 flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {correction.actualStartTime} - {correction.actualEndTime}
+                        </span>
+                      </div>
+                      {correction.caregiverNote && (
+                        <p className="text-xs text-muted-foreground mt-1 italic">
+                          &quot;{correction.caregiverNote}&quot;
+                        </p>
+                      )}
+                    </div>
+                    <Link href="/dashboard/rooster">
+                      <Button size="sm" variant="outline" className="border-orange-400 text-orange-800 hover:bg-orange-100">
+                        Bekijken
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Quick Actions */}
         <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-4">

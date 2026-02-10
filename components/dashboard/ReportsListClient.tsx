@@ -3,8 +3,13 @@
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar } from "@/components/ui/calendar"
+import { CalendarIcon, X } from "lucide-react"
+import { format } from "date-fns"
+import { nl } from "date-fns/locale"
 import Link from "next/link"
-import { useClient } from "@/lib/ClientContext"
 
 interface Report {
   id: string
@@ -42,29 +47,23 @@ interface ReportsListClientProps {
 }
 
 export default function ReportsListClient({ userRole }: ReportsListClientProps) {
-  const { selectedClient: globalSelectedClient } = useClient()
   const [reports, setReports] = useState<Report[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-
-  // Use global selected client
-  const selectedClient = globalSelectedClient?.id || ""
+  const [searchQuery, setSearchQuery] = useState("")
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
 
   useEffect(() => {
     fetchReports()
     if (userRole === "CAREGIVER") {
       fetchClients()
     }
-  }, [selectedClient, userRole])
+  }, [userRole])
 
   async function fetchReports() {
     try {
-      const url = selectedClient
-        ? `/api/reports?client=${selectedClient}`
-        : "/api/reports"
-
-      const response = await fetch(url)
+      const response = await fetch("/api/reports")
 
       if (!response.ok) {
         throw new Error("Kon rapporten niet laden")
@@ -90,6 +89,34 @@ export default function ReportsListClient({ userRole }: ReportsListClientProps) 
     } catch (error) {
       console.error("Failed to fetch clients:", error)
     }
+  }
+
+  // Filter reports by search query and selected date
+  function getFilteredReports() {
+    let filtered = reports
+
+    // Filter by search query (caregiver name or client name)
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(report =>
+        report.caregiver.name.toLowerCase().includes(query) ||
+        report.client.name.toLowerCase().includes(query)
+      )
+    }
+
+    // Filter by selected date
+    if (selectedDate) {
+      filtered = filtered.filter(report => {
+        const reportDate = new Date(report.reportDate)
+        return (
+          reportDate.getDate() === selectedDate.getDate() &&
+          reportDate.getMonth() === selectedDate.getMonth() &&
+          reportDate.getFullYear() === selectedDate.getFullYear()
+        )
+      })
+    }
+
+    return filtered
   }
 
   // Group reports by date
@@ -124,6 +151,7 @@ export default function ReportsListClient({ userRole }: ReportsListClientProps) 
   }
 
   const isCaregiver = userRole === "CAREGIVER"
+  const filteredReports = getFilteredReports()
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -153,8 +181,74 @@ export default function ReportsListClient({ userRole }: ReportsListClientProps) 
         </div>
       </div>
 
+      {/* Search Filters */}
+      <div className="mb-4 grid md:grid-cols-2 gap-4">
+        {/* Search by caregiver name */}
+        <div className="relative">
+          <Input
+            type="text"
+            placeholder="Zoeken op zorgverlener en client naam..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 bg-white"
+          />
+          <svg
+            className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+        </div>
+
+        {/* Date picker */}
+        <div className="flex gap-2">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={`w-full justify-start text-left font-normal ${
+                  !selectedDate && "text-muted-foreground"
+                }`}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {selectedDate ? (
+                  format(selectedDate, "d MMMM yyyy", { locale: nl })
+                ) : (
+                  "Selecteer datum..."
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={setSelectedDate}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+          {selectedDate && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSelectedDate(undefined)}
+              className="flex-shrink-0"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+
       <Card>
-        <CardContent className="pt-6">
+        <CardContent className="pt-6 max-h-[600px] overflow-y-scroll">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-md text-sm mb-4">
               {error}
@@ -162,19 +256,19 @@ export default function ReportsListClient({ userRole }: ReportsListClientProps) 
           )}
 
           {/* Reports List */}
-          {reports.length === 0 ? (
+          {filteredReports.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <p>Nog geen rapporten beschikbaar</p>
-              {isCaregiver && (
+              <p>{reports.length === 0 ? "Nog geen rapporten beschikbaar" : "Geen rapporten gevonden met deze zoekopdracht"}</p>
+              {isCaregiver && reports.length === 0 && (
                 <p className="text-sm mt-2">Maak uw eerste rapport aan</p>
               )}
             </div>
           ) : (
             <div className="space-y-6">
-              {Object.entries(groupReportsByDate(reports)).map(([dateKey, dateReports]) => (
+              {Object.entries(groupReportsByDate(filteredReports)).map(([dateKey, dateReports]) => (
                 <div key={dateKey} className="space-y-3">
                   {/* Date Header/Separator */}
                   <div className="flex items-center gap-3">

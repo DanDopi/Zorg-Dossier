@@ -9,6 +9,7 @@ import ShiftAssignmentModal from "./ShiftAssignmentModal"
 import CreateShiftDialog from "./CreateShiftDialog"
 import TimeOffManagement from "./TimeOffManagement"
 import RoosterOverviewStats from "./RoosterOverviewStats"
+import VacationOverview from "./VacationOverview"
 import Link from "next/link"
 import { Settings, Plus, Repeat } from "lucide-react"
 
@@ -34,6 +35,13 @@ interface Shift {
   status: string
   internalNotes?: string | null
   instructionNotes?: string | null
+  clientVerified?: boolean
+  clientVerifiedAt?: string | null
+  actualStartTime?: string | null
+  actualEndTime?: string | null
+  caregiverNote?: string | null
+  timeCorrectionStatus?: string | null
+  timeCorrectionAt?: string | null
   shiftType: {
     id: string
     name: string
@@ -135,6 +143,7 @@ export default function RoosterClient({
         <TabsList>
           <TabsTrigger value="calendar">Kalender</TabsTrigger>
           <TabsTrigger value="timeoff">Verlofaanvragen</TabsTrigger>
+          <TabsTrigger value="vacations">Vakanties</TabsTrigger>
           <TabsTrigger value="overview">Overzicht</TabsTrigger>
         </TabsList>
 
@@ -164,6 +173,10 @@ export default function RoosterClient({
 
         <TabsContent value="timeoff">
           <TimeOffManagement clientId={clientId} />
+        </TabsContent>
+
+        <TabsContent value="vacations">
+          <VacationOverview clientId={clientId} />
         </TabsContent>
 
         <TabsContent value="overview">

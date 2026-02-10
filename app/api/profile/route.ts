@@ -120,6 +120,20 @@ export async function PUT(request: NextRequest) {
           ...(color !== undefined && { color }),
         },
       })
+    } else if (user.role === "ADMIN" || user.role === "SUPER_ADMIN") {
+      const { name, address } = body
+
+      if (!name || !address) {
+        return NextResponse.json(
+          { error: "Naam en adres zijn verplicht" },
+          { status: 400 }
+        )
+      }
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { name, address },
+      })
     } else {
       return NextResponse.json(
         { error: "Profiel kan niet worden bijgewerkt voor deze gebruikersrol" },

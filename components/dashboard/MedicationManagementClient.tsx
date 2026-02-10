@@ -1,14 +1,25 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { getMaxFileSizeClient } from "@/lib/fileValidation"
+import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useClient } from "@/lib/ClientContext"
+
+// Interface for caregiver shifts
+interface CaregiverShift {
+  id: string
+  date: string
+  startTime: string
+  endTime: string
+  caregiverId: string
+  status: string
+}
 
 interface ScheduleItem {
   medication: {
@@ -44,20 +55,6 @@ interface DailySchedule {
     skipped: number
     pending: number
   }
-}
-
-interface Medication {
-  id: string
-  name: string
-  dosage: string
-  unit: string
-  frequency: string
-  instructions?: string
-  times: string
-  isActive: boolean
-  startDate?: Date | null
-  endDate?: Date | null
-  imageUrl?: string | null
 }
 
 interface User {
@@ -98,50 +95,28 @@ interface MedicationManagementClientProps {
   user: User
 }
 
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function parseLocalDate(dateString: string): Date {
+  return new Date(`${dateString}T12:00:00`)
+}
+
 export default function MedicationManagementClient({ user }: MedicationManagementClientProps) {
   const { selectedClient } = useClient()
-  const [medications, setMedications] = useState<Medication[]>([])
+  const searchParams = useSearchParams()
+
+  // URL parameter for date takes priority, then default to today
+  const preselectedDate = searchParams.get("date") || formatLocalDate(new Date())
+
   const [dailySchedule, setDailySchedule] = useState<DailySchedule | null>(null)
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split("T")[0])
+  const [selectedDate, setSelectedDate] = useState<string>(preselectedDate)
   const [isLoading, setIsLoading] = useState(true)
-  const [maxFileSize, setMaxFileSize] = useState(5 * 1024 * 1024) // Default 5MB
-
-  // Add medication dialog state
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
-  const [newMedication, setNewMedication] = useState({
-    name: "",
-    dosage: "",
-    unit: "mg",
-    frequency: "daily",
-    instructions: "",
-    times: ["08:00"],
-    startDate: "",
-    endDate: "",
-    imageUrl: "",
-  })
-  const [selectedImage, setSelectedImage] = useState<File | null>(null)
-  const [imagePreview, setImagePreview] = useState<string | null>(null)
-
-  // Edit medication dialog state
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
-  const [editingMedication, setEditingMedication] = useState<Medication | null>(null)
-  const [editMedicationForm, setEditMedicationForm] = useState({
-    name: "",
-    dosage: "",
-    unit: "mg",
-    frequency: "daily",
-    instructions: "",
-    times: ["08:00"],
-    startDate: "",
-    endDate: "",
-    imageUrl: "",
-  })
-  const [editSelectedImage, setEditSelectedImage] = useState<File | null>(null)
-  const [editImagePreview, setEditImagePreview] = useState<string | null>(null)
-
-  // Image view dialog state
-  const [imageViewDialogOpen, setImageViewDialogOpen] = useState(false)
-  const [viewingImageUrl, setViewingImageUrl] = useState<string | null>(null)
+  const [missingMedicationsCount, setMissingMedicationsCount] = useState<number>(0)
 
   // Administer medication state
   const [administerDialogOpen, setAdministerDialogOpen] = useState(false)
@@ -150,30 +125,129 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
   const [wasGiven, setWasGiven] = useState(true)
   const [skipReason, setSkipReason] = useState("")
 
+  // Caregiver shift state for medication time restriction
+  const [caregiverShifts, setCaregiverShifts] = useState<CaregiverShift[]>([])
+
+  const todayLocal = formatLocalDate(new Date())
   const isClient = user.role === "CLIENT"
   const isCaregiver = user.role === "CAREGIVER"
-  const isToday = selectedDate === new Date().toISOString().split("T")[0]
-  const isTodayOrPast = selectedDate <= new Date().toISOString().split("T")[0]
-
-  // Load max file size on mount
-  useEffect(() => {
-    async function loadMaxFileSize() {
-      const size = await getMaxFileSizeClient()
-      setMaxFileSize(size)
-    }
-    loadMaxFileSize()
-  }, [])
+  const isToday = selectedDate === todayLocal
+  const isTodayOrPast = selectedDate <= todayLocal
 
   useEffect(() => {
     // For clients, load data immediately
     if (isClient) {
       loadData()
+      fetchMissingMedications()
     }
     // For caregivers, only load if a client is selected
     else if (isCaregiver && selectedClient) {
       loadData()
+      fetchMissingMedications()
     }
   }, [selectedClient, selectedDate])
+
+  // Fetch caregiver shifts when date changes (for shift-based medication restriction)
+  useEffect(() => {
+    if (!isCaregiver || !selectedClient) {
+      setCaregiverShifts([])
+      return
+    }
+
+    async function fetchCaregiverShifts() {
+      try {
+        // Get previous day for overnight shift handling
+        const currentDate = parseLocalDate(selectedDate)
+        const previousDate = new Date(currentDate)
+        previousDate.setDate(previousDate.getDate() - 1)
+        const previousDateStr = formatLocalDate(previousDate)
+
+        const response = await fetch(
+          `/api/scheduling/shifts?clientId=${selectedClient.id}&startDate=${previousDateStr}&endDate=${selectedDate}`
+        )
+
+        if (response.ok) {
+          const shifts = await response.json()
+          console.log('[MedicationManagement] Raw shifts from API:', shifts)
+          console.log('[MedicationManagement] User caregiverProfile id:', user.caregiverProfile?.id)
+          // API returns array directly, filter to only current caregiver's shifts with FILLED or COMPLETED status
+          const myShifts = (Array.isArray(shifts) ? shifts : []).filter(
+            (s: CaregiverShift) =>
+              s.caregiverId === user.caregiverProfile?.id &&
+              (s.status === "FILLED" || s.status === "COMPLETED")
+          )
+          console.log('[MedicationManagement] Filtered myShifts:', myShifts)
+          setCaregiverShifts(myShifts)
+        }
+      } catch (error) {
+        console.error("Error fetching caregiver shifts:", error)
+        setCaregiverShifts([])
+      }
+    }
+
+    fetchCaregiverShifts()
+  }, [selectedDate, isCaregiver, selectedClient, user.caregiverProfile?.id])
+
+  // Helper function to check if medication time is within caregiver's shift
+  function isMedicationTimeWithinShift(medicationTime: string): boolean {
+    // Clients can always register their own medications
+    if (!isCaregiver) return true
+
+    // No shifts assigned = can't register any medication
+    if (caregiverShifts.length === 0) {
+      console.log('[ShiftCheck] No shifts found, returning false')
+      return false
+    }
+
+    const medHour = parseInt(medicationTime.split(":")[0])
+    const medMinute = parseInt(medicationTime.split(":")[1])
+    const medTimeMinutes = medHour * 60 + medMinute
+
+    console.log('[ShiftCheck] Checking time:', medicationTime, 'medTimeMinutes:', medTimeMinutes, 'selectedDate:', selectedDate)
+    console.log('[ShiftCheck] Available shifts:', caregiverShifts)
+
+    for (const shift of caregiverShifts) {
+      const shiftDate = new Date(shift.date)
+      const shiftDateStr = formatLocalDate(shiftDate)
+      const startHour = parseInt(shift.startTime.split(":")[0])
+      const startMinute = parseInt(shift.startTime.split(":")[1])
+      const endHour = parseInt(shift.endTime.split(":")[0])
+      const endMinute = parseInt(shift.endTime.split(":")[1])
+      const startTimeMinutes = startHour * 60 + startMinute
+      const endTimeMinutes = endHour * 60 + endMinute
+
+      console.log('[ShiftCheck] Shift:', shift.startTime, '-', shift.endTime, 'shiftDateStr:', shiftDateStr, 'startMinutes:', startTimeMinutes, 'endMinutes:', endTimeMinutes)
+
+      const isOvernightShift = endTimeMinutes < startTimeMinutes
+
+      if (isOvernightShift) {
+        // Shift spans midnight (e.g., 18:00 - 00:30)
+        // Check if medication is on shift date AND after start time
+        if (shiftDateStr === selectedDate && medTimeMinutes >= startTimeMinutes) {
+          return true
+        }
+        // Check if medication is on NEXT day (selectedDate) AND before end time
+        const nextDay = new Date(shiftDate)
+        nextDay.setDate(nextDay.getDate() + 1)
+        const nextDayStr = formatLocalDate(nextDay)
+        if (nextDayStr === selectedDate && medTimeMinutes <= endTimeMinutes) {
+          return true
+        }
+      } else {
+        // Normal shift (same day, e.g., 08:00 - 16:00)
+        console.log('[ShiftCheck] Normal shift check:', shiftDateStr, '===', selectedDate, '?', shiftDateStr === selectedDate, 'timeInRange:', medTimeMinutes >= startTimeMinutes && medTimeMinutes <= endTimeMinutes)
+        if (
+          shiftDateStr === selectedDate &&
+          medTimeMinutes >= startTimeMinutes &&
+          medTimeMinutes <= endTimeMinutes
+        ) {
+          return true
+        }
+      }
+    }
+
+    return false
+  }
 
   async function loadData() {
     setIsLoading(true)
@@ -183,19 +257,11 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
       if (clientId) params.set("clientId", clientId)
       params.set("date", selectedDate)
 
-      const [scheduleRes, medsRes] = await Promise.all([
-        fetch(`/api/medications/schedule?${params}`),
-        fetch(`/api/medications?${new URLSearchParams(clientId ? { clientId } : {})}`),
-      ])
+      const scheduleRes = await fetch(`/api/medications/schedule?${params}`)
 
       if (scheduleRes.ok) {
         const scheduleData = await scheduleRes.json()
         setDailySchedule(scheduleData)
-      }
-
-      if (medsRes.ok) {
-        const medsData = await medsRes.json()
-        setMedications(medsData)
       }
     } catch (error) {
       console.error("Error loading data:", error)
@@ -204,108 +270,27 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
     }
   }
 
-  async function handleAddMedication() {
+  async function fetchMissingMedications() {
     try {
-      let finalImageUrl = newMedication.imageUrl
+      const clientId = isClient ? undefined : selectedClient?.id
+      const params = new URLSearchParams()
+      if (clientId) params.set("clientId", clientId)
 
-      // If user uploaded a file, convert to base64 data URL
-      if (selectedImage) {
-        finalImageUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onloadend = () => resolve(reader.result as string)
-          reader.onerror = reject
-          reader.readAsDataURL(selectedImage)
-        })
-      }
-
-      const response = await fetch("/api/medications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...newMedication,
-          imageUrl: finalImageUrl,
-          clientId: selectedClient?.id || undefined,
-        }),
-      })
+      console.log('[MedicationManagement] Fetching missing medications...')
+      const response = await fetch(`/api/medications/missing?${params}`)
+      console.log('[MedicationManagement] Response status:', response.status)
 
       if (response.ok) {
-        setIsAddDialogOpen(false)
-        setNewMedication({
-          name: "",
-          dosage: "",
-          unit: "mg",
-          frequency: "daily",
-          instructions: "",
-          times: ["08:00"],
-          startDate: "",
-          endDate: "",
-          imageUrl: "",
-        })
-        setSelectedImage(null)
-        setImagePreview(null)
-        loadData()
+        const data = await response.json()
+        console.log('[MedicationManagement] API Response:', data)
+        const totalMissing = (data.summary?.totalMissing || 0) + (data.summary?.totalSkipped || 0)
+        console.log('[MedicationManagement] Total missing count:', totalMissing)
+        setMissingMedicationsCount(totalMissing)
       } else {
-        const error = await response.json()
-        console.error("API Error:", error)
-        alert(error.error || "Fout bij toevoegen medicatie")
+        console.error('[MedicationManagement] API returned error:', response.status)
       }
     } catch (error) {
-      console.error("Error adding medication:", error)
-      alert("Er is een fout opgetreden")
-    }
-  }
-
-  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (file) {
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        alert('Selecteer een geldig afbeeldingsbestand')
-        return
-      }
-
-      // Validate file size
-      if (file.size > maxFileSize) {
-        const maxMB = (maxFileSize / (1024 * 1024)).toFixed(0)
-        alert(`Afbeelding is te groot. Maximaal ${maxMB}MB toegestaan.`)
-        return
-      }
-
-      setSelectedImage(file)
-
-      // Create preview
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string)
-      }
-      reader.readAsDataURL(file)
-    }
-  }
-
-  function handleEditImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (file) {
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        alert('Selecteer een geldig afbeeldingsbestand')
-        return
-      }
-
-      // Validate file size
-      if (file.size > maxFileSize) {
-        const maxMB = (maxFileSize / (1024 * 1024)).toFixed(0)
-        alert(`Afbeelding is te groot. Maximaal ${maxMB}MB toegestaan.`)
-        return
-      }
-
-      setEditSelectedImage(file)
-
-      // Create preview
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setEditImagePreview(reader.result as string)
-      }
-      reader.readAsDataURL(file)
+      console.error("Error fetching missing medications:", error)
     }
   }
 
@@ -333,6 +318,7 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
         setWasGiven(true)
         setSkipReason("")
         loadData()
+        fetchMissingMedications() // Also refresh the missing count badge
       } else {
         const error = await response.json()
         alert(error.error || "Fout bij registreren medicatie")
@@ -343,153 +329,17 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
     }
   }
 
-  async function handleDeleteMedication(medicationId: string) {
-    if (!confirm("Weet u zeker dat u deze medicatie wilt verwijderen?")) {
-      return
-    }
-
-    try {
-      const response = await fetch(`/api/medications?id=${medicationId}`, {
-        method: "DELETE",
-      })
-
-      if (response.ok) {
-        loadData()
-      } else {
-        const error = await response.json()
-        alert(error.error || "Fout bij verwijderen medicatie")
-      }
-    } catch (error) {
-      console.error("Error deleting medication:", error)
-      alert("Er is een fout opgetreden")
-    }
-  }
-
-  function openEditDialog(medication: Medication) {
-    setEditingMedication(medication)
-    setEditMedicationForm({
-      name: medication.name,
-      dosage: medication.dosage,
-      unit: medication.unit,
-      frequency: medication.frequency,
-      instructions: medication.instructions || "",
-      times: JSON.parse(medication.times),
-      startDate: medication.startDate ? new Date(medication.startDate).toISOString().split("T")[0] : "",
-      endDate: medication.endDate ? new Date(medication.endDate).toISOString().split("T")[0] : "",
-      imageUrl: medication.imageUrl || "",
-    })
-    setEditImagePreview(medication.imageUrl || null)
-    setEditSelectedImage(null)
-    setIsEditDialogOpen(true)
-  }
-
-  async function handleUpdateMedication() {
-    if (!editingMedication) return
-
-    try {
-      let finalImageUrl = editMedicationForm.imageUrl
-
-      // If user uploaded a new file, convert to base64 data URL
-      if (editSelectedImage) {
-        finalImageUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onloadend = () => resolve(reader.result as string)
-          reader.onerror = reject
-          reader.readAsDataURL(editSelectedImage)
-        })
-      }
-
-      const response = await fetch("/api/medications", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: editingMedication.id,
-          ...editMedicationForm,
-          imageUrl: finalImageUrl,
-        }),
-      })
-
-      if (response.ok) {
-        setIsEditDialogOpen(false)
-        setEditingMedication(null)
-        setEditMedicationForm({
-          name: "",
-          dosage: "",
-          unit: "mg",
-          frequency: "daily",
-          instructions: "",
-          times: ["08:00"],
-          startDate: "",
-          endDate: "",
-          imageUrl: "",
-        })
-        setEditSelectedImage(null)
-        setEditImagePreview(null)
-        loadData()
-      } else {
-        const error = await response.json()
-        console.error("API Error:", error)
-        alert(error.error || "Fout bij bijwerken medicatie")
-      }
-    } catch (error) {
-      console.error("Error updating medication:", error)
-      alert("Er is een fout opgetreden")
-    }
-  }
-
-  function addEditTimeSlot() {
-    setEditMedicationForm({
-      ...editMedicationForm,
-      times: [...editMedicationForm.times, "12:00"],
-    })
-  }
-
-  function updateEditTimeSlot(index: number, value: string) {
-    const newTimes = [...editMedicationForm.times]
-    newTimes[index] = value
-    setEditMedicationForm({ ...editMedicationForm, times: newTimes })
-  }
-
-  function removeEditTimeSlot(index: number) {
-    if (editMedicationForm.times.length > 1) {
-      setEditMedicationForm({
-        ...editMedicationForm,
-        times: editMedicationForm.times.filter((_, i) => i !== index),
-      })
-    }
-  }
-
-  function addTimeSlot() {
-    setNewMedication({
-      ...newMedication,
-      times: [...newMedication.times, "12:00"],
-    })
-  }
-
-  function updateTimeSlot(index: number, value: string) {
-    const newTimes = [...newMedication.times]
-    newTimes[index] = value
-    setNewMedication({ ...newMedication, times: newTimes })
-  }
-
-  function removeTimeSlot(index: number) {
-    if (newMedication.times.length > 1) {
-      setNewMedication({
-        ...newMedication,
-        times: newMedication.times.filter((_, i) => i !== index),
-      })
-    }
-  }
-
   function changeDate(days: number) {
-    const currentDate = new Date(selectedDate)
+    const currentDate = parseLocalDate(selectedDate)
     currentDate.setDate(currentDate.getDate() + days)
-    setSelectedDate(currentDate.toISOString().split("T")[0])
+    setSelectedDate(formatLocalDate(currentDate))
   }
 
   function goToToday() {
-    setSelectedDate(new Date().toISOString().split("T")[0])
+    setSelectedDate(todayLocal)
   }
+
+  console.log('[MedicationManagement] Rendering with missingMedicationsCount:', missingMedicationsCount)
 
   if (isLoading) {
     return (
@@ -507,212 +357,25 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Medicatiebeheer</h1>
             <p className="text-muted-foreground mt-1">
-              {isClient
-                ? "Beheer uw medicatie en bekijk de toedieningsgeschiedenis"
-                : "Bekijk medicatie en registreer toediening"}
+              Dagelijks medicatieschema en toedieningen
             </p>
           </div>
-          {isClient && (
-            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>Medicatie Toevoegen</Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Nieuwe Medicatie Toevoegen</DialogTitle>
-                  <DialogDescription>
-                    Voeg een nieuwe medicatie toe aan uw medicatielijst
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="name">Medicijnnaam *</Label>
-                    <Input
-                      id="name"
-                      value={newMedication.name}
-                      onChange={(e) =>
-                        setNewMedication({ ...newMedication, name: e.target.value })
-                      }
-                      placeholder="Bijv. Paracetamol"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="dosage">Dosering *</Label>
-                      <Input
-                        id="dosage"
-                        value={newMedication.dosage}
-                        onChange={(e) =>
-                          setNewMedication({ ...newMedication, dosage: e.target.value })
-                        }
-                        placeholder="Bijv. 500"
-                      />
-                    </div>
-
-                    <div className="grid gap-2">
-                      <Label htmlFor="unit">Eenheid *</Label>
-                      <Select
-                        value={newMedication.unit}
-                        onValueChange={(value) =>
-                          setNewMedication({ ...newMedication, unit: value })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="mg">mg</SelectItem>
-                          <SelectItem value="ml">ml</SelectItem>
-                          <SelectItem value="tabletten">tabletten</SelectItem>
-                          <SelectItem value="druppels">druppels</SelectItem>
-                          <SelectItem value="stuks">stuks</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label htmlFor="frequency">Frequentie *</Label>
-                    <Select
-                      value={newMedication.frequency}
-                      onValueChange={(value) =>
-                        setNewMedication({ ...newMedication, frequency: value })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="daily">Dagelijks</SelectItem>
-                        <SelectItem value="twice-daily">2x per dag</SelectItem>
-                        <SelectItem value="three-times-daily">3x per dag</SelectItem>
-                        <SelectItem value="weekly">Wekelijks</SelectItem>
-                        <SelectItem value="as-needed">Zo nodig</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label>Tijdstippen *</Label>
-                    {newMedication.times.map((time, index) => (
-                      <div key={index} className="flex gap-2">
-                        <Input
-                          type="time"
-                          value={time}
-                          onChange={(e) => updateTimeSlot(index, e.target.value)}
-                        />
-                        {newMedication.times.length > 1 && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => removeTimeSlot(index)}
-                          >
-                            Verwijder
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                    <Button type="button" variant="outline" onClick={addTimeSlot}>
-                      + Tijdstip Toevoegen
-                    </Button>
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label htmlFor="instructions">Instructies</Label>
-                    <Input
-                      id="instructions"
-                      value={newMedication.instructions}
-                      onChange={(e) =>
-                        setNewMedication({ ...newMedication, instructions: e.target.value })
-                      }
-                      placeholder="Bijv. Innemen met voedsel"
-                    />
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label htmlFor="startDate">Startdatum (optioneel)</Label>
-                    <Input
-                      id="startDate"
-                      type="date"
-                      value={newMedication.startDate}
-                      onChange={(e) =>
-                        setNewMedication({ ...newMedication, startDate: e.target.value })
-                      }
-                    />
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label htmlFor="endDate">Einddatum (optioneel)</Label>
-                    <Input
-                      id="endDate"
-                      type="date"
-                      value={newMedication.endDate}
-                      onChange={(e) =>
-                        setNewMedication({ ...newMedication, endDate: e.target.value })
-                      }
-                    />
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label htmlFor="imageFile">Afbeelding (optioneel)</Label>
-                    <Input
-                      id="imageFile"
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageSelect}
-                    />
-                    {imagePreview && (
-                      <div className="mt-2">
-                        <img
-                          src={imagePreview}
-                          alt="Medicatie voorbeeld"
-                          className="max-w-xs max-h-40 object-contain border rounded"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none'
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
-                    Annuleren
-                  </Button>
-                  <Button onClick={handleAddMedication}>Toevoegen</Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          )}
-        </div>
-
-        {/* Date Navigation */}
-        <Card>
-          <CardContent className="py-4">
-            <div className="flex items-center justify-between">
-              <Button variant="outline" onClick={() => changeDate(-1)}>
-                ← Vorige Dag
-              </Button>
-              <div className="flex items-center gap-4">
-                <Input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="w-auto"
-                />
-                {!isToday && (
-                  <Button variant="outline" onClick={goToToday}>
-                    Naar Vandaag
-                  </Button>
+          <div className="flex items-center gap-3">
+            <Link href="/dashboard/medicatie/missing">
+              <Button variant="outline">
+                Ontbrekende Toedieningen Details
+                {missingMedicationsCount > 0 && (
+                  <span className="ml-2 bg-orange-600 text-white rounded-full px-2 py-0.5 text-xs">
+                    {missingMedicationsCount}
+                  </span>
                 )}
-              </div>
-              <Button variant="outline" onClick={() => changeDate(1)}>
-                Volgende Dag →
               </Button>
-            </div>
-          </CardContent>
-        </Card>
+            </Link>
+            <Link href="/dashboard/medicatie/overview">
+              <Button variant="outline">Medicatie Overzicht →</Button>
+            </Link>
+          </div>
+        </div>
 
         {/* Daily Summary */}
         {dailySchedule && dailySchedule.schedule.length > 0 && (
@@ -747,6 +410,33 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
             </CardContent>
           </Card>
         )}
+
+        {/* Date Navigation */}
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex items-center justify-between">
+              <Button variant="outline" onClick={() => changeDate(-1)}>
+                ← Vorige Dag
+              </Button>
+              <div className="flex items-center gap-4">
+                <Input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="w-auto"
+                />
+                {!isToday && (
+                  <Button variant="outline" onClick={goToToday}>
+                    Naar Vandaag
+                  </Button>
+                )}
+              </div>
+              <Button variant="outline" onClick={() => changeDate(1)}>
+                Volgende Dag →
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Medication Schedule */}
         {dailySchedule && dailySchedule.schedule.length > 0 ? (
@@ -812,14 +502,27 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
                       </div>
                     </div>
                     {isCaregiver && item.status === "pending" && isTodayOrPast && (
-                      <Button
-                        onClick={() => {
-                          setSelectedScheduleItem(item)
-                          setAdministerDialogOpen(true)
-                        }}
-                      >
-                        Registreer
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          onClick={() => {
+                            setSelectedScheduleItem(item)
+                            setAdministerDialogOpen(true)
+                          }}
+                          disabled={!isMedicationTimeWithinShift(item.time)}
+                          title={
+                            !isMedicationTimeWithinShift(item.time)
+                              ? "Deze medicatie valt buiten uw dienst"
+                              : undefined
+                          }
+                        >
+                          Registreer
+                        </Button>
+                        {!isMedicationTimeWithinShift(item.time) && (
+                          <span className="text-xs text-muted-foreground">
+                            (Buiten uw dienst)
+                          </span>
+                        )}
+                      </div>
                     )}
                     {item.status === "pending" && !isTodayOrPast && (
                       <span className="text-muted-foreground text-sm">
@@ -839,63 +542,6 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
           </Card>
         )}
 
-        {/* Active Medications List */}
-        {isClient && medications.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Actieve Medicatie</CardTitle>
-              <CardDescription>
-                Al uw actieve medicijnen
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {medications.map((med) => (
-                  <div key={med.id} className="p-3 border rounded-lg flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="font-medium">{med.name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {med.dosage} {med.unit} - {med.frequency}
-                        {med.instructions && ` - ${med.instructions}`}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        Tijden: {JSON.parse(med.times).join(", ")}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      {med.imageUrl && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setViewingImageUrl(med.imageUrl!)
-                            setImageViewDialogOpen(true)
-                          }}
-                        >
-                          Afbeelding
-                        </Button>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openEditDialog(med)}
-                      >
-                        Bewerk
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDeleteMedication(med.id)}
-                      >
-                        Verwijder
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
 
       {/* Administer medication dialog */}
@@ -955,200 +601,6 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
         </DialogContent>
       </Dialog>
 
-      {/* Edit medication dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Medicatie Bewerken</DialogTitle>
-            <DialogDescription>
-              Wijzig de gegevens van {editingMedication?.name}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="edit-name">Medicijnnaam *</Label>
-              <Input
-                id="edit-name"
-                value={editMedicationForm.name}
-                onChange={(e) =>
-                  setEditMedicationForm({ ...editMedicationForm, name: e.target.value })
-                }
-                placeholder="Bijv. Paracetamol"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="edit-dosage">Dosering *</Label>
-                <Input
-                  id="edit-dosage"
-                  value={editMedicationForm.dosage}
-                  onChange={(e) =>
-                    setEditMedicationForm({ ...editMedicationForm, dosage: e.target.value })
-                  }
-                  placeholder="Bijv. 500"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="edit-unit">Eenheid *</Label>
-                <Select
-                  value={editMedicationForm.unit}
-                  onValueChange={(value) =>
-                    setEditMedicationForm({ ...editMedicationForm, unit: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="mg">mg</SelectItem>
-                    <SelectItem value="ml">ml</SelectItem>
-                    <SelectItem value="tabletten">tabletten</SelectItem>
-                    <SelectItem value="druppels">druppels</SelectItem>
-                    <SelectItem value="stuks">stuks</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="edit-frequency">Frequentie *</Label>
-              <Select
-                value={editMedicationForm.frequency}
-                onValueChange={(value) =>
-                  setEditMedicationForm({ ...editMedicationForm, frequency: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="daily">Dagelijks</SelectItem>
-                  <SelectItem value="twice-daily">2x per dag</SelectItem>
-                  <SelectItem value="three-times-daily">3x per dag</SelectItem>
-                  <SelectItem value="weekly">Wekelijks</SelectItem>
-                  <SelectItem value="as-needed">Zo nodig</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid gap-2">
-              <Label>Tijdstippen *</Label>
-              {editMedicationForm.times.map((time, index) => (
-                <div key={index} className="flex gap-2">
-                  <Input
-                    type="time"
-                    value={time}
-                    onChange={(e) => updateEditTimeSlot(index, e.target.value)}
-                  />
-                  {editMedicationForm.times.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => removeEditTimeSlot(index)}
-                    >
-                      Verwijder
-                    </Button>
-                  )}
-                </div>
-              ))}
-              <Button type="button" variant="outline" onClick={addEditTimeSlot}>
-                + Tijdstip Toevoegen
-              </Button>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="edit-instructions">Instructies</Label>
-              <Input
-                id="edit-instructions"
-                value={editMedicationForm.instructions}
-                onChange={(e) =>
-                  setEditMedicationForm({ ...editMedicationForm, instructions: e.target.value })
-                }
-                placeholder="Bijv. Innemen met voedsel"
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="edit-startDate">Startdatum (optioneel)</Label>
-              <Input
-                id="edit-startDate"
-                type="date"
-                value={editMedicationForm.startDate}
-                onChange={(e) =>
-                  setEditMedicationForm({ ...editMedicationForm, startDate: e.target.value })
-                }
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="edit-endDate">Einddatum (optioneel)</Label>
-              <Input
-                id="edit-endDate"
-                type="date"
-                value={editMedicationForm.endDate}
-                onChange={(e) =>
-                  setEditMedicationForm({ ...editMedicationForm, endDate: e.target.value })
-                }
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="edit-imageFile">Afbeelding (optioneel)</Label>
-              <Input
-                id="edit-imageFile"
-                type="file"
-                accept="image/*"
-                onChange={handleEditImageSelect}
-              />
-              {editImagePreview && (
-                <div className="mt-2">
-                  <img
-                    src={editImagePreview}
-                    alt="Medicatie voorbeeld"
-                    className="max-w-xs max-h-40 object-contain border rounded"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none'
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
-              Annuleren
-            </Button>
-            <Button onClick={handleUpdateMedication}>Opslaan</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Image view dialog */}
-      <Dialog open={imageViewDialogOpen} onOpenChange={setImageViewDialogOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Medicatie Afbeelding</DialogTitle>
-          </DialogHeader>
-          <div className="flex items-center justify-center p-4">
-            {viewingImageUrl && (
-              <img
-                src={viewingImageUrl}
-                alt="Medicatie afbeelding"
-                className="max-w-full max-h-[70vh] object-contain"
-                onError={(e) => {
-                  e.currentTarget.src = ""
-                  e.currentTarget.alt = "Afbeelding kon niet geladen worden"
-                }}
-              />
-            )}
-          </div>
-          <div className="flex justify-end">
-            <Button onClick={() => setImageViewDialogOpen(false)}>Sluiten</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

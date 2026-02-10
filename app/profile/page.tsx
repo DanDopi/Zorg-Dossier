@@ -34,10 +34,17 @@ const caregiverProfileSchema = z.object({
   color: z.string().optional(),
 })
 
+const adminProfileSchema = z.object({
+  name: z.string().min(2, "Naam is verplicht"),
+  address: z.string().min(5, "Adres is verplicht"),
+})
+
 interface UserProfile {
   id: string
   email: string
   role: 'CLIENT' | 'CAREGIVER' | 'ADMIN' | 'SUPER_ADMIN'
+  name?: string | null
+  address?: string | null
   clientProfile?: {
     name: string
     dateOfBirth: string
@@ -63,9 +70,16 @@ export default function ProfilePage() {
 
   const isClient = user?.role === "CLIENT"
   const isCaregiver = user?.role === "CAREGIVER"
+  const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN"
+
+  function getSchema() {
+    if (isClient) return clientProfileSchema
+    if (isCaregiver) return caregiverProfileSchema
+    return adminProfileSchema
+  }
 
   const form = useForm({
-    resolver: zodResolver(isClient ? clientProfileSchema : caregiverProfileSchema),
+    resolver: zodResolver(getSchema()),
     defaultValues: {
       name: "",
       dateOfBirth: "",
@@ -102,6 +116,12 @@ export default function ProfilePage() {
           address: data.caregiverProfile.address,
           bio: data.caregiverProfile.bio || "",
           color: data.caregiverProfile.color || CAREGIVER_COLORS[0].hex,
+        })
+      } else {
+        // ADMIN / SUPER_ADMIN
+        form.reset({
+          name: data.name || "",
+          address: data.address || "",
         })
       }
     } catch (err) {
@@ -175,7 +195,7 @@ export default function ProfilePage() {
                 <CardDescription>
                   {isClient && "Uw persoonlijke gegevens als cliënt"}
                   {isCaregiver && "Uw persoonlijke gegevens als zorgverlener"}
-                  {!isClient && !isCaregiver && "Uw profiel informatie"}
+                  {isAdmin && "Uw profiel informatie als beheerder"}
                 </CardDescription>
               </div>
               {!isEditing && (
@@ -256,6 +276,19 @@ export default function ProfilePage() {
                           Gebruikt voor rooster visualisatie
                         </span>
                       </div>
+                    </div>
+                  </>
+                )}
+
+                {isAdmin && (
+                  <>
+                    <div>
+                      <Label className="text-muted-foreground">Naam</Label>
+                      <p className="text-lg">{user?.name || "Niet ingesteld"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">Adres</Label>
+                      <p className="text-lg">{user?.address || "Niet ingesteld"}</p>
                     </div>
                   </>
                 )}

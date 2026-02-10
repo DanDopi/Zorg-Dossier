@@ -10,6 +10,8 @@ interface Shift {
   internalNotes?: string | null
   instructionNotes?: string | null
   isPatternOverride: boolean
+  clientVerified?: boolean
+  timeCorrectionStatus?: string | null
   shiftType: {
     id: string
     name: string
@@ -37,6 +39,13 @@ export function ShiftCard({ shift, onClick, isReadOnly = false, caregiverId }: S
     : (shift.shiftType?.color || shift.caregiver?.color || "#E5E7EB")
   const textColor = getContrastingTextColor(bgColor)
   const isUnfilled = !shift.caregiver
+  const isPast = (() => {
+    const d = new Date(shift.date)
+    d.setHours(0, 0, 0, 0)
+    const t = new Date()
+    t.setHours(0, 0, 0, 0)
+    return d < t
+  })()
 
   const initials = shift.caregiver
     ? shift.caregiver.name
@@ -62,6 +71,25 @@ export function ShiftCard({ shift, onClick, isReadOnly = false, caregiverId }: S
       onClick={onClick}
       title={isUnfilled ? "Klik om zorgverlener toe te wijzen" : `Klik om ${shift.caregiver?.name} aan te passen`}
     >
+      {/* Time Correction Indicator */}
+      {shift.timeCorrectionStatus === "PENDING" && (
+        <div
+          className="absolute top-1 left-1 w-3 h-3"
+          title="Zorgverlener heeft afwijkende tijden doorgegeven"
+        >
+          <span className="absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75 animate-ping"></span>
+          <span className="relative inline-flex rounded-full h-3 w-3 bg-orange-500"></span>
+        </div>
+      )}
+      {shift.timeCorrectionStatus === "ACKNOWLEDGED" && (
+        <div
+          className="absolute top-1 left-1 w-3 h-3"
+          title="Tijdcorrectie verwerkt"
+        >
+          <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+        </div>
+      )}
+
       {/* Pattern Override Indicator */}
       {shift.isPatternOverride && (
         <div
@@ -88,21 +116,31 @@ export function ShiftCard({ shift, onClick, isReadOnly = false, caregiverId }: S
             <span className="text-xs font-medium">Niet ingevuld</span>
           </>
         ) : (
-          <>
+          <div
+            className="flex items-center gap-2 rounded-md px-2 py-1 -mx-1"
+            style={{
+              backgroundColor: shift.caregiver?.color
+                ? `${shift.caregiver.color}30`
+                : undefined,
+              border: shift.caregiver?.color
+                ? `2px solid ${shift.caregiver.color}`
+                : undefined,
+            }}
+          >
             <div
-              className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border"
+              className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border flex-shrink-0"
               style={{
                 backgroundColor: shift.caregiver?.color || "#9CA3AF",
                 color: getContrastingTextColor(shift.caregiver?.color || "#9CA3AF"),
-                borderColor: textColor,
+                borderColor: shift.caregiver?.color || "#9CA3AF",
               }}
             >
               {initials}
             </div>
-            <span className="text-xs font-medium truncate">
+            <span className="text-sm font-semibold truncate">
               {shift.caregiver?.name}
             </span>
-          </>
+          </div>
         )}
       </div>
 
@@ -115,9 +153,11 @@ export function ShiftCard({ shift, onClick, isReadOnly = false, caregiverId }: S
       )}
 
       {/* Status Badge */}
-      {shift.status === "COMPLETED" && (
-        <div className="absolute bottom-1 right-1 text-xs font-semibold opacity-75">
-          ✓
+      {(shift.status === "COMPLETED" || isPast) && (
+        <div className={`absolute bottom-1 right-1 text-xs font-semibold ${
+          shift.clientVerified ? "text-green-400" : "opacity-75"
+        }`}>
+          {shift.clientVerified ? "✓✓" : "✓"}
         </div>
       )}
     </div>

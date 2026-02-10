@@ -263,6 +263,7 @@ export async function PUT(request: NextRequest) {
       internalNotes,
       instructionNotes,
       status,
+      recurrence,
     } = body
 
     if (!id) {
@@ -337,6 +338,10 @@ export async function PUT(request: NextRequest) {
         ...(instructionNotes !== undefined && { instructionNotes }),
         ...(newStatus && { status: newStatus }),
         ...(isPatternOverride && { isPatternOverride: true }),
+        // Auto-acknowledge pending time correction when client saves the shift
+        ...(existingShift.timeCorrectionStatus === "PENDING" && {
+          timeCorrectionStatus: "ACKNOWLEDGED",
+        }),
       },
       include: {
         shiftType: true,
@@ -352,7 +357,101 @@ export async function PUT(request: NextRequest) {
       },
     })
 
-    return NextResponse.json(updatedShift)
+    // Handle recurrence: assign caregiver to matching future shifts
+    let recurringUpdated = 0
+    if (recurrence && caregiverId && recurrence.type !== "NONE") {
+      const shiftDate = new Date(existingShift.date)
+      const shiftDayOfWeek = shiftDate.getDay() // 0=Sunday, 1=Monday, etc.
+      const endDate = recurrence.endDate
+        ? new Date(recurrence.endDate + "T23:59:59")
+        : new Date(shiftDate.getFullYear(), 11, 31, 23, 59, 59) // End of year
+
+      // Create a ShiftPattern for tracking
+      await prisma.shiftPattern.create({
+        data: {
+          clientId: user.clientProfile.id,
+          caregiverId,
+          shiftTypeId: existingShift.shiftTypeId,
+          recurrenceType: recurrence.type,
+          daysOfWeek: JSON.stringify([recurrence.dayOfWeek]),
+          startDate: shiftDate,
+          endDate,
+          isActive: true,
+          createdBy: session.user.id,
+        },
+      })
+
+      // Find all future UNFILLED shifts matching criteria
+      const futureShifts = await prisma.shift.findMany({
+        where: {
+          clientId: existingShift.clientId,
+          shiftTypeId: existingShift.shiftTypeId,
+          status: "UNFILLED",
+          date: {
+            gt: shiftDate,
+            lte: endDate,
+          },
+        },
+        orderBy: { date: "asc" },
+      })
+
+      // Filter shifts by recurrence pattern
+      const shiftsToUpdate: string[] = []
+
+      for (const futureShift of futureShifts) {
+        const futureDate = new Date(futureShift.date)
+        const futureDayOfWeek = futureDate.getDay()
+
+        // Must be same day of week
+        if (futureDayOfWeek !== shiftDayOfWeek) continue
+
+        if (recurrence.type === "WEEKLY") {
+          // Every week - just matching day of week is enough
+          shiftsToUpdate.push(futureShift.id)
+        } else if (recurrence.type === "BIWEEKLY") {
+          // Every other week - check if week difference is even
+          const diffTime = futureDate.getTime() - shiftDate.getTime()
+          const diffWeeks = Math.round(diffTime / (7 * 24 * 60 * 60 * 1000))
+          if (diffWeeks % 2 === 0) {
+            shiftsToUpdate.push(futureShift.id)
+          }
+        } else if (recurrence.type === "FIRST_OF_MONTH") {
+          // First occurrence of this day-of-week in the month
+          const firstOfMonth = new Date(futureDate.getFullYear(), futureDate.getMonth(), 1)
+          let firstOccurrence = new Date(firstOfMonth)
+          while (firstOccurrence.getDay() !== shiftDayOfWeek) {
+            firstOccurrence.setDate(firstOccurrence.getDate() + 1)
+          }
+          if (futureDate.getDate() === firstOccurrence.getDate()) {
+            shiftsToUpdate.push(futureShift.id)
+          }
+        } else if (recurrence.type === "LAST_OF_MONTH") {
+          // Last occurrence of this day-of-week in the month
+          const lastOfMonth = new Date(futureDate.getFullYear(), futureDate.getMonth() + 1, 0)
+          let lastOccurrence = new Date(lastOfMonth)
+          while (lastOccurrence.getDay() !== shiftDayOfWeek) {
+            lastOccurrence.setDate(lastOccurrence.getDate() - 1)
+          }
+          if (futureDate.getDate() === lastOccurrence.getDate()) {
+            shiftsToUpdate.push(futureShift.id)
+          }
+        }
+      }
+
+      // Batch update all matching shifts
+      if (shiftsToUpdate.length > 0) {
+        const result = await prisma.shift.updateMany({
+          where: { id: { in: shiftsToUpdate } },
+          data: {
+            caregiverId,
+            status: "FILLED",
+          },
+        })
+        recurringUpdated = result.count
+      }
+    }
+
+    return NextResponse.json({ shift: updatedShift, recurringUpdated })
   } catch (error) {
     console.error("Error updating shift:", error)
     return NextResponse.json(

@@ -31,6 +31,8 @@ interface Shift {
   internalNotes?: string | null
   instructionNotes?: string | null
   isPatternOverride: boolean
+  clientVerified?: boolean
+  timeCorrectionStatus?: string | null
   shiftType: {
     id: string
     name: string
@@ -199,13 +201,13 @@ export default function ScheduleCalendar({
               return (
                 <div
                   key={day.toISOString()}
-                  className={`bg-white min-h-[120px] p-2 ${
-                    today ? "bg-blue-50" : ""
-                  } ${!isCurrentMonth ? "opacity-50" : ""}`}
+                  className={`min-h-[120px] p-2 ${
+                    today ? "bg-blue-50" : !isCurrentMonth ? "bg-gray-100" : "bg-white"
+                  } ${!isCurrentMonth ? "opacity-30" : ""}`}
                 >
                   <div
                     className={`text-sm font-semibold mb-1 ${
-                      today ? "text-blue-600" : "text-gray-900"
+                      today ? "text-blue-600" : !isCurrentMonth ? "text-gray-400" : "text-gray-900"
                     }`}
                   >
                     {formatDayDate(day)}
@@ -245,14 +247,45 @@ export default function ScheduleCalendar({
                             )
                           ) : (
                             shift.caregiver && (
-                              <div className="text-[10px] opacity-90 mt-0.5">
+                              <div
+                                className="text-xs font-semibold mt-1 px-1.5 py-0.5 rounded inline-block"
+                                style={{
+                                  backgroundColor: shift.caregiver.color
+                                    ? `${shift.caregiver.color}40`
+                                    : "rgba(255,255,255,0.25)",
+                                  border: shift.caregiver.color
+                                    ? `1.5px solid ${shift.caregiver.color}`
+                                    : undefined,
+                                }}
+                              >
                                 {shift.caregiver.name}
                               </div>
                             )
                           )}
+                          {shift.timeCorrectionStatus === "PENDING" && (
+                            <span
+                              className="absolute top-0.5 left-0.5 inline-flex h-2 w-2"
+                              title="Tijdcorrectie aangevraagd"
+                            >
+                              <span className="absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75 animate-ping"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                            </span>
+                          )}
+                          {shift.timeCorrectionStatus === "ACKNOWLEDGED" && (
+                            <span
+                              className="absolute top-0.5 left-0.5 inline-flex h-2 w-2"
+                              title="Tijdcorrectie verwerkt"
+                            >
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                            </span>
+                          )}
                           {(shift.status === "COMPLETED" || isPastShift) && (
-                            <div className="absolute top-0.5 right-0.5 text-white font-bold text-xs">
-                              ✓
+                            <div className={`absolute top-0.5 right-0.5 font-bold text-xs ${
+                              shift.clientVerified
+                                ? "text-green-300"
+                                : "text-white opacity-70"
+                            }`}>
+                              {shift.clientVerified ? "✓✓" : "✓"}
                             </div>
                           )}
                         </div>
@@ -330,7 +363,7 @@ export default function ScheduleCalendar({
       )}
 
       {/* Legend */}
-      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+      <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 bg-gray-400 border-2 border-dashed border-gray-600 rounded"></div>
           <span>Niet ingevuld</span>
@@ -338,6 +371,10 @@ export default function ScheduleCalendar({
         <div className="flex items-center gap-2">
           <span>✓</span>
           <span>Voltooid</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-green-600 font-bold">✓✓</span>
+          <span>Gecontroleerd door cliënt</span>
         </div>
       </div>
     </div>

@@ -70,6 +70,98 @@ export async function POST(request: Request) {
       )
     }
 
+    // Server-side shift validation: verify caregiver has a shift covering this medication time
+    const scheduledDateTime = new Date(scheduledTime)
+
+    // Use local date components to avoid timezone issues (toISOString converts to UTC which causes mismatches)
+    const medYear = scheduledDateTime.getFullYear()
+    const medMonth = String(scheduledDateTime.getMonth() + 1).padStart(2, '0')
+    const medDay = String(scheduledDateTime.getDate()).padStart(2, '0')
+    const medDateStr = `${medYear}-${medMonth}-${medDay}`
+
+    // Get previous day for overnight shift check
+    const previousDate = new Date(scheduledDateTime)
+    previousDate.setDate(previousDate.getDate() - 1)
+    const prevYear = previousDate.getFullYear()
+    const prevMonth = String(previousDate.getMonth() + 1).padStart(2, '0')
+    const prevDay = String(previousDate.getDate()).padStart(2, '0')
+    const prevDateStr = `${prevYear}-${prevMonth}-${prevDay}`
+
+    // Create Date objects at noon local time to avoid timezone issues with date-only strings
+    // (new Date("2026-01-07") creates UTC midnight, which can shift to wrong day in local timezone)
+    const prevDateForQuery = new Date(previousDate.getFullYear(), previousDate.getMonth(), previousDate.getDate(), 0, 0, 0)
+    const medDateForQuery = new Date(scheduledDateTime.getFullYear(), scheduledDateTime.getMonth(), scheduledDateTime.getDate(), 23, 59, 59)
+
+    const caregiverShifts = await prisma.shift.findMany({
+      where: {
+        caregiverId: user.caregiverProfile.id,
+        clientId: medication.clientId,
+        date: {
+          gte: prevDateForQuery,
+          lte: medDateForQuery,
+        },
+        status: { in: ["FILLED", "COMPLETED"] },
+      },
+    })
+
+    // Helper function to check if medication time is within any shift
+    function checkTimeWithinShifts(): boolean {
+      const medHour = scheduledDateTime.getHours()
+      const medMinute = scheduledDateTime.getMinutes()
+      const medTimeMinutes = medHour * 60 + medMinute
+
+      for (const shift of caregiverShifts) {
+        // Use local date components for shift date too
+        const shiftDate = new Date(shift.date)
+        const shiftYear = shiftDate.getFullYear()
+        const shiftMonth = String(shiftDate.getMonth() + 1).padStart(2, '0')
+        const shiftDay = String(shiftDate.getDate()).padStart(2, '0')
+        const shiftDateStr = `${shiftYear}-${shiftMonth}-${shiftDay}`
+
+        const startHour = parseInt(shift.startTime.split(":")[0])
+        const startMinute = parseInt(shift.startTime.split(":")[1])
+        const endHour = parseInt(shift.endTime.split(":")[0])
+        const endMinute = parseInt(shift.endTime.split(":")[1])
+        const startTimeMinutes = startHour * 60 + startMinute
+        const endTimeMinutes = endHour * 60 + endMinute
+
+        const isOvernightShift = endTimeMinutes < startTimeMinutes
+
+        if (isOvernightShift) {
+          // Shift spans midnight
+          if (shiftDateStr === medDateStr && medTimeMinutes >= startTimeMinutes) {
+            return true
+          }
+          const nextDay = new Date(shift.date)
+          nextDay.setDate(nextDay.getDate() + 1)
+          const nextYear = nextDay.getFullYear()
+          const nextMonth = String(nextDay.getMonth() + 1).padStart(2, '0')
+          const nextDayNum = String(nextDay.getDate()).padStart(2, '0')
+          const nextDayStr = `${nextYear}-${nextMonth}-${nextDayNum}`
+          if (nextDayStr === medDateStr && medTimeMinutes <= endTimeMinutes) {
+            return true
+          }
+        } else {
+          // Normal shift (same day)
+          if (
+            shiftDateStr === medDateStr &&
+            medTimeMinutes >= startTimeMinutes &&
+            medTimeMinutes <= endTimeMinutes
+          ) {
+            return true
+          }
+        }
+      }
+      return false
+    }
+
+    if (!checkTimeWithinShifts()) {
+      return NextResponse.json(
+        { error: "Deze medicatie valt buiten uw dienst" },
+        { status: 403 }
+      )
+    }
+
     // Check if this administration already exists (prevent duplicates)
     const existingAdministration = await prisma.medicationAdministration.findFirst({
       where: {

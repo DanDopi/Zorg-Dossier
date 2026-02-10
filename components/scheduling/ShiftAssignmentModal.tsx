@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
-import { AlertCircle } from "lucide-react"
+import { AlertCircle, CheckCircle } from "lucide-react"
 import { formatFullDate } from "@/lib/utils/calendar"
 
 interface Shift {
@@ -31,6 +31,13 @@ interface Shift {
   status: string
   internalNotes?: string | null
   instructionNotes?: string | null
+  clientVerified?: boolean
+  clientVerifiedAt?: string | null
+  actualStartTime?: string | null
+  actualEndTime?: string | null
+  caregiverNote?: string | null
+  timeCorrectionStatus?: string | null
+  timeCorrectionAt?: string | null
   shiftType: {
     id: string
     name: string
@@ -78,6 +85,21 @@ export default function ShiftAssignmentModal({
   const [instructionNotes, setInstructionNotes] = useState("")
   const [conflicts, setConflicts] = useState<Conflict[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isVerifying, setIsVerifying] = useState(false)
+  const [recurrenceType, setRecurrenceType] = useState<string>("NONE")
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState<string>("")
+
+  // Get day name in Dutch for display
+  function getDutchDayName(date: Date): string {
+    const days = ["zondag", "maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag"]
+    return days[new Date(date).getDay()]
+  }
+
+  // Get day name in English for API
+  function getEnglishDayName(date: Date): string {
+    const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+    return days[new Date(date).getDay()]
+  }
 
   useEffect(() => {
     if (shift) {
@@ -87,6 +109,10 @@ export default function ShiftAssignmentModal({
       setInternalNotes(shift.internalNotes || "")
       setInstructionNotes(shift.instructionNotes || "")
       setConflicts([])
+      setRecurrenceType("NONE")
+      // Default end date to end of current year
+      const year = new Date(shift.date).getFullYear()
+      setRecurrenceEndDate(`${year}-12-31`)
     }
   }, [shift])
 
@@ -132,22 +158,36 @@ export default function ShiftAssignmentModal({
 
     setIsSubmitting(true)
     try {
+      const requestBody: Record<string, unknown> = {
+        id: shift.id,
+        caregiverId: caregiverId === "unassigned" ? null : caregiverId,
+        startTime,
+        endTime,
+        internalNotes,
+        instructionNotes,
+      }
+
+      // Include recurrence if selected and assigning a caregiver
+      if (recurrenceType !== "NONE" && caregiverId !== "unassigned") {
+        requestBody.recurrence = {
+          type: recurrenceType,
+          endDate: recurrenceEndDate || undefined,
+          dayOfWeek: getEnglishDayName(shift.date),
+        }
+      }
+
       const response = await fetch("/api/scheduling/shifts", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: shift.id,
-          caregiverId: caregiverId === "unassigned" ? null : caregiverId,
-          startTime,
-          endTime,
-          internalNotes,
-          instructionNotes,
-        }),
+        body: JSON.stringify(requestBody),
       })
 
       if (response.ok) {
-        const updatedShift = await response.json()
-        onSave(updatedShift)
+        const result = await response.json()
+        if (result.recurringUpdated > 0) {
+          alert(`Zorgverlener toegewezen aan deze dienst en ${result.recurringUpdated} toekomstige diensten.`)
+        }
+        onSave(result.shift || result)
         onClose()
       } else {
         const errorData = await response.json()
@@ -184,10 +224,45 @@ export default function ShiftAssignmentModal({
     }
   }
 
+  const handleVerify = async (verified: boolean) => {
+    if (!shift) return
+    setIsVerifying(true)
+    try {
+      const response = await fetch("/api/scheduling/shifts/verify", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shiftId: shift.id, verified }),
+      })
+      if (response.ok) {
+        onSave(shift)
+        onClose()
+      } else {
+        const errorData = await response.json()
+        alert(`Fout: ${errorData.error}`)
+      }
+    } catch {
+      alert("Er is een fout opgetreden")
+    } finally {
+      setIsVerifying(false)
+    }
+  }
+
   if (!shift) return null
 
   const isUnassigned = !shift.caregiver
   const isChangingAssignment = shift.caregiver && caregiverId !== shift.caregiver.id && caregiverId !== "unassigned"
+
+  const isPastShift = (() => {
+    const shiftDate = new Date(shift.date)
+    shiftDate.setHours(0, 0, 0, 0)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return shiftDate < today
+  })()
+
+  const isVerifiable = isPastShift &&
+    shift.caregiver != null &&
+    (shift.status === "FILLED" || shift.status === "COMPLETED")
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -200,6 +275,57 @@ export default function ShiftAssignmentModal({
             {formatFullDate(shift.date)} - {shift.shiftType.name}
           </DialogDescription>
         </DialogHeader>
+
+        {/* Time Correction Banner - for clients */}
+        {shift.timeCorrectionStatus === "PENDING" && (
+          <div className="bg-orange-50 border border-orange-300 rounded-lg p-4">
+            <div className="flex gap-2 items-start">
+              <AlertCircle className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <h4 className="font-semibold text-orange-900 mb-2">
+                  Zorgverlener heeft afwijkende tijden doorgegeven
+                </h4>
+                <div className="grid grid-cols-2 gap-3 mb-2">
+                  <div className="bg-white rounded p-2 border border-orange-200">
+                    <div className="text-xs text-muted-foreground">Ingepland</div>
+                    <div className="font-medium text-sm">{shift.startTime} - {shift.endTime}</div>
+                  </div>
+                  <div className="bg-orange-100 rounded p-2 border border-orange-300">
+                    <div className="text-xs text-orange-700">Werkelijk gewerkt</div>
+                    <div className="font-medium text-sm text-orange-900">
+                      {shift.actualStartTime} - {shift.actualEndTime}
+                    </div>
+                  </div>
+                </div>
+                {shift.caregiverNote && (
+                  <p className="text-sm text-orange-800 italic mb-2">
+                    &quot;{shift.caregiverNote}&quot;
+                  </p>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-orange-400 text-orange-800 hover:bg-orange-100"
+                  onClick={() => {
+                    if (shift.actualStartTime) setStartTime(shift.actualStartTime)
+                    if (shift.actualEndTime) setEndTime(shift.actualEndTime)
+                  }}
+                >
+                  Tijden overnemen
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {shift.timeCorrectionStatus === "ACKNOWLEDGED" && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2">
+            <CheckCircle className="w-5 h-5 text-green-600" />
+            <span className="text-sm text-green-900 font-medium">
+              Tijdcorrectie van zorgverlener is verwerkt
+            </span>
+          </div>
+        )}
 
         {/* Current Assignment Status */}
         {isUnassigned ? (
@@ -215,6 +341,45 @@ export default function ShiftAssignmentModal({
               <span className="font-medium">Huidige zorgverlener:</span>{" "}
               <span>{shift.caregiver?.name}</span>
             </div>
+          </div>
+        )}
+
+        {/* Verification Section - only for verifiable past shifts */}
+        {isVerifiable && (
+          <div className={`border rounded-lg p-3 flex items-center justify-between ${
+            shift.clientVerified
+              ? "bg-green-50 border-green-200"
+              : "bg-amber-50 border-amber-200"
+          }`}>
+            <div className="flex items-center gap-2">
+              {shift.clientVerified ? (
+                <>
+                  <CheckCircle className="w-5 h-5 text-green-600" />
+                  <span className="text-sm text-green-900 font-medium">
+                    Gecontroleerd
+                  </span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-5 h-5 text-amber-600" />
+                  <span className="text-sm text-amber-900 font-medium">
+                    Nog niet gecontroleerd
+                  </span>
+                </>
+              )}
+            </div>
+            <Button
+              size="sm"
+              variant={shift.clientVerified ? "outline" : "default"}
+              onClick={() => handleVerify(!shift.clientVerified)}
+              disabled={isVerifying}
+            >
+              {isVerifying
+                ? "Bezig..."
+                : shift.clientVerified
+                ? "Markering ongedaan maken"
+                : "Markeer als gecontroleerd"}
+            </Button>
           </div>
         )}
 
@@ -281,6 +446,50 @@ export default function ShiftAssignmentModal({
                   </p>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Recurrence Option - only show when assigning a caregiver */}
+          {caregiverId !== "unassigned" && (
+            <div className="space-y-3 border rounded-lg p-4 bg-gray-50">
+              <div className="space-y-2">
+                <Label>Herhaling</Label>
+                <Select value={recurrenceType} onValueChange={setRecurrenceType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Geen herhaling" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE">Geen herhaling</SelectItem>
+                    <SelectItem value="WEEKLY">
+                      Elke week op {shift ? getDutchDayName(shift.date) : ""}
+                    </SelectItem>
+                    <SelectItem value="BIWEEKLY">
+                      Om de week op {shift ? getDutchDayName(shift.date) : ""}
+                    </SelectItem>
+                    <SelectItem value="FIRST_OF_MONTH">
+                      Eerste {shift ? getDutchDayName(shift.date) : ""} van de maand
+                    </SelectItem>
+                    <SelectItem value="LAST_OF_MONTH">
+                      Laatste {shift ? getDutchDayName(shift.date) : ""} van de maand
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {recurrenceType !== "NONE" && (
+                <div className="space-y-2">
+                  <Label htmlFor="recurrenceEndDate">Einddatum herhaling</Label>
+                  <Input
+                    id="recurrenceEndDate"
+                    type="date"
+                    value={recurrenceEndDate}
+                    onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Zorgverlener wordt toegewezen aan alle overeenkomende onbezette diensten tot deze datum.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 

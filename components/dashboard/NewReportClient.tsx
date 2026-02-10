@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useClient } from "@/lib/ClientContext"
 
 interface Client {
@@ -27,17 +28,18 @@ interface NewReportClientProps {
 export default function NewReportClient({ activeClients }: NewReportClientProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { selectedClient: globalSelectedClient } = useClient()
+  const { selectedClient: globalSelectedClient, setSelectedClient } = useClient()
 
   // URL parameter takes priority, then global context, then empty
   const preselectedClient = searchParams.get("client") || globalSelectedClient?.id || ""
+  const preselectedDate = searchParams.get("date") || new Date().toISOString().split('T')[0]
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Form fields
   const [clientId, setClientId] = useState(preselectedClient)
-  const [reportDate, setReportDate] = useState(new Date().toISOString().split('T')[0])
+  const [reportDate, setReportDate] = useState(preselectedDate)
   const [content, setContent] = useState("")
   const [images, setImages] = useState<(File | null)[]>([null, null, null])
 
@@ -110,6 +112,21 @@ export default function NewReportClient({ activeClients }: NewReportClientProps)
     }
   }
 
+  // Handle client change - updates both local state and global context
+  function handleClientChange(newClientId: string) {
+    setClientId(newClientId)
+
+    // Update global context
+    const selectedClientData = activeClients.find(c => c.client.id === newClientId)
+    if (selectedClientData) {
+      setSelectedClient({
+        id: selectedClientData.client.id,
+        name: selectedClientData.client.name,
+        email: selectedClientData.client.user.email
+      })
+    }
+  }
+
   // Get the selected client name for display
   const selectedClientName = activeClients.find(c => c.client.id === clientId)?.client.name
 
@@ -139,23 +156,24 @@ export default function NewReportClient({ activeClients }: NewReportClientProps)
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Client Selection - Read-only, use global selector */}
+                {/* Client Selection - Editable, updates global context */}
                 <div>
                   <Label htmlFor="client">Cliënt *</Label>
-                  {clientId && selectedClientName ? (
-                    <div className="mt-2 p-3 bg-blue-50 border-2 border-blue-200 rounded-md">
-                      <div>
-                        <p className="font-semibold text-blue-900">{selectedClientName}</p>
-                        <p className="text-sm text-blue-700">Geselecteerd via global selector</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mt-2 p-3 bg-amber-50 border-2 border-amber-200 rounded-md">
-                      <p className="text-sm text-amber-800">
-                        Selecteer een cliënt via de global selector bovenaan de pagina
-                      </p>
-                    </div>
-                  )}
+                  <Select value={clientId} onValueChange={handleClientChange}>
+                    <SelectTrigger className="mt-2 bg-blue-50 border-2 border-blue-200 text-blue-900 font-semibold hover:bg-blue-100">
+                      <SelectValue placeholder="Selecteer een cliënt..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeClients.map((clientRel) => (
+                        <SelectItem key={clientRel.client.id} value={clientRel.client.id}>
+                          {clientRel.client.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-blue-700 mt-1">
+                    Wijzigingen hier worden ook toegepast op de global selector
+                  </p>
                 </div>
 
                 {/* Report Date */}

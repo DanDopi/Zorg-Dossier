@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { TimeOffNotificationPanel } from "@/components/dashboard/TimeOffNotificationPanel"
+import { Pill, AlertTriangle, CheckCircle2, Clock, ClipboardCheck, FileText, CalendarOff, ChevronRight } from "lucide-react"
 
 interface UserWithProfile {
   id: string
@@ -39,6 +40,23 @@ interface Client {
   email: string
 }
 
+interface DailyClientTask {
+  client: { id: string; name: string }
+  shift: { startTime: string; endTime: string; shiftTypeName: string; shiftTypeColor: string }
+  medicatie: { summary: { total: number; given: number; skipped: number; pending: number } }
+  sondevoeding: { summary: { total: number; given: number; skipped: number; pending: number } }
+  verpleegtechnisch: { items: { isOverdue: boolean }[] }
+  wondzorg: { items: { isOverdue: boolean }[] }
+  rapportage: { count: number }
+  summary: { totalTasks: number; completed: number; pending: number; overdue: number; status: "all_done" | "pending" | "overdue" }
+}
+
+interface DailyTasksData {
+  date: string
+  clients: DailyClientTask[]
+  globalSummary: { totalTasks: number; completed: number; pending: number; overdue: number }
+}
+
 interface CaregiverDashboardProps {
   user: UserWithProfile & {
     caregiverProfile?: {
@@ -55,11 +73,14 @@ export default function CaregiverDashboard({ user, clients }: CaregiverDashboard
   const [isLoadingReports, setIsLoadingReports] = useState(true)
   const [timeOffNotifications, setTimeOffNotifications] = useState<any[]>([])
   const [isLoadingTimeOff, setIsLoadingTimeOff] = useState(true)
+  const [dailyTasks, setDailyTasks] = useState<DailyTasksData | null>(null)
+  const [isLoadingTasks, setIsLoadingTasks] = useState(true)
 
   useEffect(() => {
     fetchInvitations()
     fetchRecentReports()
     fetchTimeOffNotifications()
+    fetchDailyTasks()
   }, [])
 
   async function fetchInvitations() {
@@ -112,6 +133,21 @@ export default function CaregiverDashboard({ user, clients }: CaregiverDashboard
     }
   }
 
+  async function fetchDailyTasks() {
+    try {
+      setIsLoadingTasks(true)
+      const response = await fetch("/api/caregiver/daily-tasks")
+      if (response.ok) {
+        const data = await response.json()
+        setDailyTasks(data)
+      }
+    } catch (error) {
+      console.error("Failed to fetch daily tasks:", error)
+    } finally {
+      setIsLoadingTasks(false)
+    }
+  }
+
   const handleDismiss = async (id: string) => {
     try {
       const response = await fetch("/api/scheduling/time-off", {
@@ -158,6 +194,145 @@ export default function CaregiverDashboard({ user, clients }: CaregiverDashboard
           onDismiss={handleDismiss}
           isLoading={isLoadingTimeOff}
         />
+
+        {/* Taken Vandaag */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <ClipboardCheck className="h-5 w-5" />
+                  Taken Vandaag
+                </CardTitle>
+                <CardDescription>Uw taken op basis van uw rooster vandaag</CardDescription>
+              </div>
+              {dailyTasks && dailyTasks.clients.length > 0 && (
+                <Link href="/dashboard/mijn-taken">
+                  <Button variant="outline" size="sm">
+                    Bekijk Alle Taken <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                  </Button>
+                </Link>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {isLoadingTasks ? (
+              <div className="text-center py-6">
+                <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
+              </div>
+            ) : !dailyTasks || dailyTasks.clients.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground">
+                <CalendarOff className="h-10 w-10 mx-auto text-gray-300 mb-3" />
+                <p>Geen diensten vandaag</p>
+                <Link href="/dashboard/mijn-rooster">
+                  <Button variant="ghost" size="sm" className="mt-2">Bekijk Mijn Rooster</Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {dailyTasks.clients.map((ct) => {
+                  const borderColor =
+                    ct.summary.status === "overdue"
+                      ? "border-l-red-500"
+                      : ct.summary.status === "pending"
+                      ? "border-l-amber-500"
+                      : "border-l-green-500"
+
+                  return (
+                    <Link key={ct.client.id} href="/dashboard/mijn-taken" className="no-underline">
+                      <Card className={`border-l-4 ${borderColor} hover:shadow-md transition-shadow cursor-pointer h-full`}>
+                        <CardContent className="p-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <div
+                              className="w-2.5 h-6 rounded-full"
+                              style={{ backgroundColor: ct.shift.shiftTypeColor }}
+                            />
+                            <h4 className="font-semibold">{ct.client.name}</h4>
+                          </div>
+                          <p className="text-xs text-muted-foreground mb-3">
+                            {ct.shift.shiftTypeName} {ct.shift.startTime} - {ct.shift.endTime}
+                          </p>
+
+                          <div className="space-y-1 text-sm">
+                            {ct.medicatie.summary.total > 0 && (
+                              <div className="flex items-center justify-between">
+                                <span className="flex items-center gap-1.5 text-muted-foreground">
+                                  <Pill className="h-3.5 w-3.5" /> Medicatie
+                                </span>
+                                <span className={ct.medicatie.summary.pending > 0 ? "text-amber-600" : "text-green-600"}>
+                                  {ct.medicatie.summary.given + ct.medicatie.summary.skipped}/{ct.medicatie.summary.total}
+                                </span>
+                              </div>
+                            )}
+                            {ct.sondevoeding.summary.total > 0 && (
+                              <div className="flex items-center justify-between">
+                                <span className="flex items-center gap-1.5 text-muted-foreground">
+                                  <Clock className="h-3.5 w-3.5" /> Sondevoeding
+                                </span>
+                                <span className={ct.sondevoeding.summary.pending > 0 ? "text-amber-600" : "text-green-600"}>
+                                  {ct.sondevoeding.summary.given + ct.sondevoeding.summary.skipped}/{ct.sondevoeding.summary.total}
+                                </span>
+                              </div>
+                            )}
+                            {ct.verpleegtechnisch.items.length > 0 && (
+                              <div className="flex items-center justify-between">
+                                <span className="flex items-center gap-1.5 text-muted-foreground">
+                                  <ClipboardCheck className="h-3.5 w-3.5" /> Verpleegtechnisch
+                                </span>
+                                <span className={ct.verpleegtechnisch.items.some(i => i.isOverdue) ? "text-red-600 font-medium" : "text-amber-600"}>
+                                  {ct.verpleegtechnisch.items.filter(i => i.isOverdue).length > 0
+                                    ? `${ct.verpleegtechnisch.items.filter(i => i.isOverdue).length} achterstallig`
+                                    : `${ct.verpleegtechnisch.items.length} gepland`
+                                  }
+                                </span>
+                              </div>
+                            )}
+                            {ct.wondzorg.items.length > 0 && (
+                              <div className="flex items-center justify-between">
+                                <span className="flex items-center gap-1.5 text-muted-foreground">
+                                  <AlertTriangle className="h-3.5 w-3.5" /> Wondzorg
+                                </span>
+                                <span className={ct.wondzorg.items.some(i => i.isOverdue) ? "text-red-600 font-medium" : "text-amber-600"}>
+                                  {ct.wondzorg.items.length} zorgmoment{ct.wondzorg.items.length !== 1 ? "en" : ""}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between">
+                              <span className="flex items-center gap-1.5 text-muted-foreground">
+                                <FileText className="h-3.5 w-3.5" /> Rapportage
+                              </span>
+                              <span className={ct.rapportage.count > 0 ? "text-green-600" : "text-amber-600"}>
+                                {ct.rapportage.count > 0 ? `${ct.rapportage.count} geschreven` : "Geen rapport"}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 pt-2 border-t">
+                            {ct.summary.status === "all_done" && (
+                              <span className="text-xs font-medium text-green-600 flex items-center gap-1">
+                                <CheckCircle2 className="h-3.5 w-3.5" /> Alles afgerond
+                              </span>
+                            )}
+                            {ct.summary.status === "pending" && (
+                              <span className="text-xs font-medium text-amber-600 flex items-center gap-1">
+                                <Clock className="h-3.5 w-3.5" /> {ct.summary.pending} taken open
+                              </span>
+                            )}
+                            {ct.summary.status === "overdue" && (
+                              <span className="text-xs font-medium text-red-600 flex items-center gap-1">
+                                <AlertTriangle className="h-3.5 w-3.5" /> {ct.summary.overdue} achterstallig
+                              </span>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Quick Actions */}
         <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-4">
