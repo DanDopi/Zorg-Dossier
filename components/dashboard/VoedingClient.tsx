@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ChevronsLeft, ChevronsRight } from "lucide-react"
+import { ChevronsLeft, ChevronsRight, Pencil, Trash2 } from "lucide-react"
 import { useClient } from "@/lib/ClientContext"
 
 interface MealRecord {
@@ -195,15 +195,30 @@ interface VoedingClientProps {
 }
 
 export default function VoedingClient({ user }: VoedingClientProps) {
-  const { selectedClient } = useClient()
+  const { selectedClient, setSelectedClient } = useClient()
   const searchParams = useSearchParams()
+
+  // If clientId is passed in URL, auto-select that client
+  useEffect(() => {
+    const clientIdParam = searchParams.get("clientId")
+    const clientNameParam = searchParams.get("clientName")
+    if (clientIdParam && clientIdParam !== selectedClient?.id) {
+      setSelectedClient({
+        id: clientIdParam,
+        name: clientNameParam || "",
+        email: "",
+      })
+    }
+  }, [searchParams])
+
   const initialTab = useMemo(() => {
     const tab = searchParams.get("tab")
     if (tab === "tube-feeding" || tab === "fluid-balance") return tab
     return "meals"
   }, [])
   const [activeTab, setActiveTab] = useState<"meals" | "tube-feeding" | "fluid-balance">(initialTab)
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split("T")[0])
+  const initialDate = useMemo(() => searchParams.get("date") || new Date().toISOString().split("T")[0], [])
+  const [selectedDate, setSelectedDate] = useState<string>(initialDate)
   const [openDays, setOpenDays] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
@@ -299,6 +314,9 @@ export default function VoedingClient({ user }: VoedingClientProps) {
     ? user.clientProfile?.id
     : selectedClient?.id
 
+  // Missing voeding count (for badge)
+  const [missingVoedingCount, setMissingVoedingCount] = useState<number>(0)
+
   // Shift check: caregivers can only register if they have a shift on the selected date
   const [hasShiftOnDate, setHasShiftOnDate] = useState(false)
   const isFutureDate = selectedDate > new Date().toISOString().split("T")[0]
@@ -321,6 +339,19 @@ export default function VoedingClient({ user }: VoedingClientProps) {
     volumeGiven: dailySchedule.filter(i => i.status === "given").reduce((sum, i) => sum + (i.administration?.volumeGiven || i.schedule.volume), 0),
     volumeExpected: dailySchedule.reduce((sum, i) => sum + i.schedule.volume, 0),
   }
+  // Meal schedule overview (from daily schedule matching)
+  const mealScheduleOverview = {
+    total: dailyMealSchedule.length,
+    done: dailyMealSchedule.filter(i => i.status === "done").length,
+    pending: dailyMealSchedule.filter(i => i.status === "pending").length,
+  }
+  // Fluid schedule overview (from daily schedule matching)
+  const fluidScheduleOverview = {
+    total: dailyFluidSchedule.length,
+    done: dailyFluidSchedule.filter(i => i.status === "done").length,
+    pending: dailyFluidSchedule.filter(i => i.status === "pending").length,
+    volumeExpected: dailyFluidSchedule.reduce((sum, i) => sum + i.schedule.volume, 0),
+  }
   const fluidTotalIntake = fluidIntakeRecords.reduce((sum, r) => sum + r.volume, 0)
   const fluidTotalOutput = urineRecords.reduce((sum, r) => sum + r.volume, 0)
   const fluidBalance = fluidTotalIntake - fluidTotalOutput
@@ -329,10 +360,26 @@ export default function VoedingClient({ user }: VoedingClientProps) {
     if (targetClientId) {
       loadData()
       if (isCaregiver) fetchOpenDays()
+      fetchMissingVoeding()
     } else {
       setIsLoading(false)
     }
   }, [targetClientId, selectedDate, activeTab])
+
+  async function fetchMissingVoeding() {
+    if (!targetClientId) return
+    try {
+      const params = new URLSearchParams()
+      if (!isClient) params.set("clientId", targetClientId)
+      const response = await fetch(`/api/voeding/missing?${params}`)
+      if (response.ok) {
+        const data = await response.json()
+        setMissingVoedingCount(data.summary?.total || 0)
+      }
+    } catch (error) {
+      console.error("Error fetching missing voeding:", error)
+    }
+  }
 
   async function checkCaregiverShift() {
     if (!isCaregiver || !targetClientId || !user.caregiverProfile) {
@@ -367,7 +414,7 @@ export default function VoedingClient({ user }: VoedingClientProps) {
 
       if (activeTab === "meals") {
         if (isClient) {
-          await Promise.all([fetchMealRecords(), fetchMealSchedules()])
+          await Promise.all([fetchMealRecords(), fetchMealSchedules(), fetchDailyMealSchedule()])
         } else {
           await Promise.all([fetchMealRecords(), fetchDailyMealSchedule()])
         }
@@ -379,7 +426,7 @@ export default function VoedingClient({ user }: VoedingClientProps) {
         }
       } else if (activeTab === "fluid-balance") {
         if (isClient) {
-          await Promise.all([fetchFluidIntakeRecords(), fetchUrineRecords(), fetchFluidSchedules()])
+          await Promise.all([fetchFluidIntakeRecords(), fetchUrineRecords(), fetchFluidSchedules(), fetchDailyFluidSchedule()])
         } else {
           await Promise.all([fetchFluidIntakeRecords(), fetchUrineRecords(), fetchDailyFluidSchedule()])
         }
@@ -1029,7 +1076,15 @@ export default function VoedingClient({ user }: VoedingClientProps) {
 
         {/* Tabs */}
         <div className="flex items-center justify-between">
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="outline" className={missingVoedingCount > 0 ? "bg-orange-50 border-orange-200 text-orange-700" : ""}>
+              Ontbrekende Registraties
+              {missingVoedingCount > 0 && (
+                <span className="ml-2 bg-orange-600 text-white rounded-full px-2 py-0.5 text-xs">
+                  {missingVoedingCount}
+                </span>
+              )}
+            </Button>
             <Button
               variant={activeTab === "meals" ? "default" : "outline"}
               onClick={() => setActiveTab("meals")}
@@ -1067,7 +1122,7 @@ export default function VoedingClient({ user }: VoedingClientProps) {
         </div>
 
         {/* Overview Card - above date selector, matching Medication page layout */}
-        {!isLoading && activeTab === "meals" && mealRecords.length > 0 && (
+        {!isLoading && activeTab === "meals" && (mealRecords.length > 0 || dailyMealSchedule.length > 0) && (
           <Card>
             <CardHeader>
               <CardTitle>Overzicht {new Date(selectedDate).toLocaleDateString("nl-NL", {
@@ -1077,29 +1132,50 @@ export default function VoedingClient({ user }: VoedingClientProps) {
                 day: "numeric"
               })}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-5 gap-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold">{mealOverview.total}</div>
-                  <div className="text-sm text-muted-foreground">Totaal</div>
+            <CardContent className="space-y-4">
+              {dailyMealSchedule.length > 0 && (
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold">{mealScheduleOverview.total}</div>
+                    <div className="text-sm text-muted-foreground">Gepland</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">{mealScheduleOverview.done}</div>
+                    <div className="text-sm text-muted-foreground">Geregistreerd</div>
+                  </div>
+                  <div className="text-center">
+                    <div className={`text-2xl font-bold ${mealScheduleOverview.pending > 0 ? "text-amber-600" : "text-gray-400"}`}>{mealScheduleOverview.pending}</div>
+                    <div className="text-sm text-muted-foreground">Nog te doen</div>
+                  </div>
                 </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-orange-600">{mealOverview.breakfast}</div>
-                  <div className="text-sm text-muted-foreground">Ontbijt</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{mealOverview.lunch}</div>
-                  <div className="text-sm text-muted-foreground">Lunch</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-purple-600">{mealOverview.dinner}</div>
-                  <div className="text-sm text-muted-foreground">Avondeten</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{mealOverview.snacks}</div>
-                  <div className="text-sm text-muted-foreground">Tussendoor</div>
-                </div>
-              </div>
+              )}
+              {mealRecords.length > 0 && (
+                <>
+                  {dailyMealSchedule.length > 0 && <hr className="border-gray-200" />}
+                  <div className="grid grid-cols-5 gap-4">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold">{mealOverview.total}</div>
+                      <div className="text-sm text-muted-foreground">Totaal</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-orange-600">{mealOverview.breakfast}</div>
+                      <div className="text-sm text-muted-foreground">Ontbijt</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-blue-600">{mealOverview.lunch}</div>
+                      <div className="text-sm text-muted-foreground">Lunch</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-purple-600">{mealOverview.dinner}</div>
+                      <div className="text-sm text-muted-foreground">Avondeten</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-600">{mealOverview.snacks}</div>
+                      <div className="text-sm text-muted-foreground">Tussendoor</div>
+                    </div>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
         )}
@@ -1141,7 +1217,7 @@ export default function VoedingClient({ user }: VoedingClientProps) {
           </Card>
         )}
 
-        {!isLoading && activeTab === "fluid-balance" && (fluidIntakeRecords.length > 0 || urineRecords.length > 0) && (
+        {!isLoading && activeTab === "fluid-balance" && (fluidIntakeRecords.length > 0 || urineRecords.length > 0 || dailyFluidSchedule.length > 0) && (
           <Card>
             <CardHeader>
               <CardTitle>Overzicht {new Date(selectedDate).toLocaleDateString("nl-NL", {
@@ -1151,23 +1227,48 @@ export default function VoedingClient({ user }: VoedingClientProps) {
                 day: "numeric"
               })}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{fluidTotalIntake} ml</div>
-                  <div className="text-sm text-muted-foreground">Totaal Inname</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-amber-600">{fluidTotalOutput} ml</div>
-                  <div className="text-sm text-muted-foreground">Totaal Uitscheiding</div>
-                </div>
-                <div className="text-center">
-                  <div className={`text-2xl font-bold ${fluidBalance >= 0 ? "text-green-600" : "text-red-600"}`}>
-                    {fluidBalance} ml
+            <CardContent className="space-y-4">
+              {dailyFluidSchedule.length > 0 && (
+                <div className="grid grid-cols-4 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold">{fluidScheduleOverview.total}</div>
+                    <div className="text-sm text-muted-foreground">Gepland</div>
                   </div>
-                  <div className="text-sm text-muted-foreground">Balans (In - Uit)</div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">{fluidScheduleOverview.done}</div>
+                    <div className="text-sm text-muted-foreground">Geregistreerd</div>
+                  </div>
+                  <div className="text-center">
+                    <div className={`text-2xl font-bold ${fluidScheduleOverview.pending > 0 ? "text-amber-600" : "text-gray-400"}`}>{fluidScheduleOverview.pending}</div>
+                    <div className="text-sm text-muted-foreground">Nog te doen</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600">{fluidTotalIntake} / {fluidScheduleOverview.volumeExpected} ml</div>
+                    <div className="text-sm text-muted-foreground">Volume</div>
+                  </div>
                 </div>
-              </div>
+              )}
+              {(fluidIntakeRecords.length > 0 || urineRecords.length > 0) && (
+                <>
+                  {dailyFluidSchedule.length > 0 && <hr className="border-gray-200" />}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-600">{fluidTotalIntake} ml</div>
+                      <div className="text-sm text-muted-foreground">Totaal Inname</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-amber-600">{fluidTotalOutput} ml</div>
+                      <div className="text-sm text-muted-foreground">Totaal Uitscheiding</div>
+                    </div>
+                    <div className="text-center">
+                      <div className={`text-2xl font-bold ${fluidBalance >= 0 ? "text-green-600" : "text-red-600"}`}>
+                        {fluidBalance} ml
+                      </div>
+                      <div className="text-sm text-muted-foreground">Balans (In - Uit)</div>
+                    </div>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
         )}
@@ -1817,6 +1918,14 @@ function TubeFeedingScheduleTab({
                         }</p>
                         <p>📅 Van {new Date(schedule.startDate).toLocaleDateString('nl-NL')} {schedule.endDate && `tot ${new Date(schedule.endDate).toLocaleDateString('nl-NL')}`}</p>
                       </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => openEditScheduleDialog(schedule)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleDeleteSchedule(schedule.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
                 </CardContent>
@@ -2687,6 +2796,14 @@ function MealScheduleSection({
                         <p>📅 Van {new Date(schedule.startDate).toLocaleDateString("nl-NL")} {schedule.endDate && `tot ${new Date(schedule.endDate).toLocaleDateString("nl-NL")}`}</p>
                       </div>
                     </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => openEditScheduleDialog(schedule)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleDeleteSchedule(schedule.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -3020,6 +3137,14 @@ function FluidScheduleSection({
                         </p>
                         <p>📅 Van {new Date(schedule.startDate).toLocaleDateString("nl-NL")} {schedule.endDate && `tot ${new Date(schedule.endDate).toLocaleDateString("nl-NL")}`}</p>
                       </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => openEditScheduleDialog(schedule)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => handleDeleteSchedule(schedule.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
                 </CardContent>

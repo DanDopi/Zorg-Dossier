@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -122,9 +123,23 @@ function getFrequencyLabel(days: number): string {
 }
 
 export default function NursingProceduresClient({ user }: NursingProceduresClientProps) {
-  const { selectedClient } = useClient()
+  const { selectedClient, setSelectedClient } = useClient()
+  const searchParams = useSearchParams()
   const isClient = user.role === "CLIENT"
   const isCaregiver = user.role === "CAREGIVER"
+
+  // If clientId is passed in URL, auto-select that client
+  useEffect(() => {
+    const clientIdParam = searchParams.get("clientId")
+    const clientNameParam = searchParams.get("clientName")
+    if (clientIdParam && clientIdParam !== selectedClient?.id) {
+      setSelectedClient({
+        id: clientIdParam,
+        name: clientNameParam || "",
+        email: "",
+      })
+    }
+  }, [searchParams])
 
   const [procedures, setProcedures] = useState<Procedure[]>([])
   const [caregivers, setCaregivers] = useState<Caregiver[]>([])

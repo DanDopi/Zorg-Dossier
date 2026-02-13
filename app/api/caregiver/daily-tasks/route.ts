@@ -96,9 +96,11 @@ export async function GET(request: Request) {
           woundCarePlans,
           defecationCount,
           urineAgg,
-          fluidAgg,
+          fluidRecords,
           meals,
           reportCount,
+          mealSchedules,
+          fluidSchedules,
         ] = await Promise.all([
           // Medications active for this date
           prisma.medication.findMany({
@@ -173,10 +175,10 @@ export async function GET(request: Request) {
             _count: true,
             _sum: { volume: true },
           }),
-          prisma.fluidIntakeRecord.aggregate({
+          // Fluid intake records for today (individual records for schedule matching)
+          prisma.fluidIntakeRecord.findMany({
             where: { clientId, recordDate: { gte: startOfDay, lte: endOfDay } },
-            _count: true,
-            _sum: { volume: true },
+            select: { id: true, recordTime: true, volume: true, fluidType: true },
           }),
           // Meals for today
           prisma.mealRecord.findMany({
@@ -187,7 +189,23 @@ export async function GET(request: Request) {
           prisma.careReport.count({
             where: { clientId, reportDate: { gte: startOfDay, lte: endOfDay } },
           }),
+          // Meal schedules (active)
+          prisma.mealSchedule.findMany({
+            where: { clientId, isActive: true },
+            orderBy: { mealTime: "asc" },
+          }),
+          // Fluid intake schedules (active)
+          prisma.fluidIntakeSchedule.findMany({
+            where: { clientId, isActive: true },
+            orderBy: { intakeTime: "asc" },
+          }),
         ])
+
+        // Compute fluid aggregate from records (replaces the old fluidAgg)
+        const fluidAgg = {
+          _count: fluidRecords.length,
+          _sum: { volume: fluidRecords.reduce((sum, r) => sum + (r.volume || 0), 0) },
+        }
 
         // Build medication schedule filtered by shift time range
         const shiftStartMin = timeToMinutes(firstShift.startTime)
@@ -247,7 +265,7 @@ export async function GET(request: Request) {
 
         // Build tube feeding schedule (reuse recurrence logic)
         const dayOfWeek = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][targetDate.getDay()]
-        const filteredTubeFeeds = filterTubeFeedingSchedules(tubeFeedSchedules, targetDate, dayOfWeek)
+        const filteredTubeFeeds = filterSchedulesByRecurrence(tubeFeedSchedules, targetDate, dayOfWeek)
         const tubeItems = filteredTubeFeeds.map((schedule) => {
           const [hours, minutes] = schedule.feedingTime.split(":")
           const scheduledTime = new Date(targetDate)
@@ -321,16 +339,72 @@ export async function GET(request: Request) {
           }
         }).filter((w) => w.isDueToday || w.isOverdue)
 
-        // Meals
+        // Meals: match schedules against records
         const mealTypes = meals.map((m) => m.mealType)
+        const MEAL_TYPE_LABELS: Record<string, string> = {
+          breakfast: "Ontbijt", lunch: "Lunch", dinner: "Avondeten", snack: "Tussendoortje",
+        }
+        const filteredMealSchedules = filterSchedulesByRecurrence(mealSchedules, targetDate, dayOfWeek)
+        const voedingItems = filteredMealSchedules.map((schedule) => ({
+          mealType: schedule.mealType,
+          mealTypeLabel: MEAL_TYPE_LABELS[schedule.mealType] || schedule.mealType,
+          mealTime: schedule.mealTime,
+          description: schedule.description,
+          status: mealTypes.includes(schedule.mealType) ? "done" as const : "pending" as const,
+        }))
         const voeding = {
+          items: voedingItems,
+          summary: {
+            total: voedingItems.length,
+            done: voedingItems.filter((v) => v.status === "done").length,
+            pending: voedingItems.filter((v) => v.status === "pending").length,
+          },
+          // Keep legacy booleans for backward compatibility
           breakfast: mealTypes.includes("breakfast"),
           lunch: mealTypes.includes("lunch"),
           dinner: mealTypes.includes("dinner"),
           snack: mealTypes.includes("snack"),
         }
 
-        // Compute summary
+        // Fluids: match schedules against records
+        const FLUID_TYPE_LABELS: Record<string, string> = {
+          water: "Water", thee: "Thee", koffie: "Koffie", sap: "Sap", melk: "Melk", other: "Anders",
+        }
+        const filteredFluidSchedules = filterSchedulesByRecurrence(fluidSchedules, targetDate, dayOfWeek)
+        const vochtItems = filteredFluidSchedules.map((schedule) => {
+          // Match: find a fluid record within 60 minutes of scheduled time
+          const [schedH, schedM] = schedule.intakeTime.split(":").map(Number)
+          const schedMinutes = schedH * 60 + schedM
+          const matched = fluidRecords.some((record) => {
+            const rt = new Date(record.recordTime)
+            const recMinutes = rt.getHours() * 60 + rt.getMinutes()
+            return Math.abs(recMinutes - schedMinutes) <= 60
+          })
+          return {
+            scheduleId: schedule.id,
+            intakeTime: schedule.intakeTime,
+            volume: schedule.volume,
+            fluidType: schedule.fluidType,
+            fluidTypeLabel: FLUID_TYPE_LABELS[schedule.fluidType] || schedule.fluidType,
+            status: matched ? "done" as const : "pending" as const,
+          }
+        })
+        const vocht = {
+          items: vochtItems,
+          summary: {
+            total: vochtItems.length,
+            done: vochtItems.filter((v) => v.status === "done").length,
+            pending: vochtItems.filter((v) => v.status === "pending").length,
+          },
+        }
+
+        // Rapportage
+        const rapportage = {
+          count: reportCount,
+          status: reportCount > 0 ? "done" as const : "pending" as const,
+        }
+
+        // Compute summary (including all task types)
         const medCompleted = medItems.filter((m) => m.status !== "pending").length
         const medPending = medItems.filter((m) => m.status === "pending").length
         const tubeCompleted = tubeItems.filter((t) => t.status !== "pending").length
@@ -339,10 +413,16 @@ export async function GET(request: Request) {
         const nursingDue = nursingItems.length
         const woundOverdue = woundItems.filter((w) => w.isOverdue).length
         const woundDue = woundItems.length
+        const mealsDone = voeding.summary.done
+        const mealsPending = voeding.summary.pending
+        const fluidsDone = vocht.summary.done
+        const fluidsPending = vocht.summary.pending
+        const reportDone = rapportage.status === "done" ? 1 : 0
+        const reportPending = 1 - reportDone
 
-        const totalTasks = medItems.length + tubeItems.length + nursingDue + woundDue
-        const completed = medCompleted + tubeCompleted
-        const pending = medPending + tubePending + (nursingDue - nursingOverdue) + (woundDue - woundOverdue)
+        const totalTasks = medItems.length + tubeItems.length + nursingDue + woundDue + voedingItems.length + vochtItems.length + 1
+        const completed = medCompleted + tubeCompleted + mealsDone + fluidsDone + reportDone
+        const pending = medPending + tubePending + (nursingDue - nursingOverdue) + (woundDue - woundOverdue) + mealsPending + fluidsPending + reportPending
         const overdue = nursingOverdue + woundOverdue
 
         let status: "all_done" | "pending" | "overdue" = "all_done"
@@ -384,7 +464,8 @@ export async function GET(request: Request) {
             fluid: { count: fluidAgg._count, volume: fluidAgg._sum.volume || 0 },
           },
           voeding,
-          rapportage: { count: reportCount },
+          vocht,
+          rapportage,
           summary: { totalTasks, completed, pending, overdue, status },
         }
       }
@@ -492,7 +573,7 @@ function buildMedicationSchedule(
 }
 
 // Reused tube feeding recurrence filter from /api/voeding/tube-feeding/daily
-function filterTubeFeedingSchedules(
+function filterSchedulesByRecurrence(
   allSchedules: any[],
   targetDate: Date,
   dayOfWeek: string

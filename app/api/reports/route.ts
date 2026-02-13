@@ -223,6 +223,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Verify caregiver has a shift on the report date for this client
+    const reportDateObj = new Date(reportDate + "T12:00:00")
+    const dayStart = new Date(reportDateObj.getFullYear(), reportDateObj.getMonth(), reportDateObj.getDate(), 0, 0, 0)
+    const dayEnd = new Date(reportDateObj.getFullYear(), reportDateObj.getMonth(), reportDateObj.getDate(), 23, 59, 59)
+
+    const shiftOnDate = await prisma.shift.findFirst({
+      where: {
+        caregiverId: user.caregiverProfile.id,
+        clientId: clientId,
+        date: { gte: dayStart, lte: dayEnd },
+        status: { in: ["FILLED", "COMPLETED"] },
+      },
+    })
+
+    if (!shiftOnDate) {
+      return NextResponse.json(
+        { error: "U kunt alleen een rapport aanmaken voor dagen waarop u een dienst heeft" },
+        { status: 403 }
+      )
+    }
+
     // Handle images (max 3, 5MB each)
     const images: { data: Buffer; mimeType: string; fileName: string; fileSize: number }[] = []
 

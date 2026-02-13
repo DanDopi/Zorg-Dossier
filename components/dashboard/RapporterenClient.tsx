@@ -71,6 +71,7 @@ export default function RapporterenClient({ user }: RapporterenClientProps) {
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
   )
+  const [hasShift, setHasShift] = useState<boolean | null>(null)
 
   const isClient = user.role === "CLIENT"
   const isCaregiver = user.role === "CAREGIVER"
@@ -85,6 +86,25 @@ export default function RapporterenClient({ user }: RapporterenClientProps) {
       fetchOpenDays()
     }
   }, [selectedClient])
+
+  // Check if caregiver has a shift on the selected date
+  useEffect(() => {
+    if (!isCaregiver || !selectedClient || !selectedDate) {
+      setHasShift(null)
+      return
+    }
+
+    async function checkShift() {
+      try {
+        const res = await fetch(`/api/shifts/check?clientId=${selectedClient!.id}&date=${selectedDate}`)
+        const data = await res.json()
+        setHasShift(data.hasShift)
+      } catch {
+        setHasShift(null)
+      }
+    }
+    checkShift()
+  }, [isCaregiver, selectedClient, selectedDate])
 
   async function fetchReports() {
     try {
@@ -232,11 +252,17 @@ export default function RapporterenClient({ user }: RapporterenClientProps) {
           </Link>
         </div>
         {isCaregiver && (
-          <Link href="/dashboard/reports/new">
-            <Button className="bg-blue-600 hover:bg-orange-500 text-white">
+          hasShift === false ? (
+            <Button className="bg-gray-400 text-white cursor-not-allowed" disabled>
               Maak een nieuw rapport
             </Button>
-          </Link>
+          ) : (
+            <Link href={`/dashboard/reports/new?date=${selectedDate}`}>
+              <Button className="bg-blue-600 hover:bg-orange-500 text-white">
+                Maak een nieuw rapport
+              </Button>
+            </Link>
+          )
         )}
       </div>
 
@@ -357,6 +383,13 @@ export default function RapporterenClient({ user }: RapporterenClientProps) {
         </CardContent>
       </Card>
 
+      {/* No shift warning */}
+      {isCaregiver && hasShift === false && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-md text-sm">
+          U kunt geen registraties aanmaken omdat u geen dienst heeft op deze dag.
+        </div>
+      )}
+
       {/* Reports List for Selected Day */}
       <Card>
         <CardHeader>
@@ -389,14 +422,20 @@ export default function RapporterenClient({ user }: RapporterenClientProps) {
               </svg>
               <p>Geen rapportages voor deze dag</p>
               {isCaregiver && (
-                <p className="text-sm mt-2">
-                  <Link
-                    href="/dashboard/reports/new"
-                    className="text-blue-600 hover:underline"
-                  >
-                    Maak een rapport aan
-                  </Link>
-                </p>
+                hasShift === false ? (
+                  <p className="text-sm mt-2 text-red-600">
+                    U kunt geen rapport maken voor deze dag omdat u geen dienst heeft.
+                  </p>
+                ) : (
+                  <p className="text-sm mt-2">
+                    <Link
+                      href={`/dashboard/reports/new?date=${selectedDate}`}
+                      className="text-blue-600 hover:underline"
+                    >
+                      Maak een rapport aan
+                    </Link>
+                  </p>
+                )
               )}
             </div>
           ) : (

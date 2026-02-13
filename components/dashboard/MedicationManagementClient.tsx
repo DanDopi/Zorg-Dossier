@@ -110,11 +110,24 @@ function parseLocalDate(dateString: string): Date {
 }
 
 export default function MedicationManagementClient({ user }: MedicationManagementClientProps) {
-  const { selectedClient } = useClient()
+  const { selectedClient, setSelectedClient } = useClient()
   const searchParams = useSearchParams()
 
   // URL parameter for date takes priority, then default to today
   const preselectedDate = searchParams.get("date") || formatLocalDate(new Date())
+
+  // If clientId is passed in URL, auto-select that client
+  useEffect(() => {
+    const clientIdParam = searchParams.get("clientId")
+    const clientNameParam = searchParams.get("clientName")
+    if (clientIdParam && clientIdParam !== selectedClient?.id) {
+      setSelectedClient({
+        id: clientIdParam,
+        name: clientNameParam || "",
+        email: "",
+      })
+    }
+  }, [searchParams])
 
   const [dailySchedule, setDailySchedule] = useState<DailySchedule | null>(null)
   const [selectedDate, setSelectedDate] = useState<string>(preselectedDate)

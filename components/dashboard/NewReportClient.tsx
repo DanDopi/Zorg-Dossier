@@ -45,12 +45,38 @@ export default function NewReportClient({ activeClients }: NewReportClientProps)
   const [images, setImages] = useState<(File | null)[]>([null, null, null])
   const [isCompressing, setIsCompressing] = useState(false)
 
+  // Shift validation
+  const [hasShift, setHasShift] = useState<boolean | null>(null)
+  const [checkingShift, setCheckingShift] = useState(false)
+
   // Update clientId when global context changes (if no URL param)
   useEffect(() => {
     if (!searchParams.get("client") && globalSelectedClient?.id) {
       setClientId(globalSelectedClient.id)
     }
   }, [globalSelectedClient, searchParams])
+
+  // Check if caregiver has a shift on selected date for selected client
+  useEffect(() => {
+    if (!clientId || !reportDate) {
+      setHasShift(null)
+      return
+    }
+
+    async function checkShift() {
+      setCheckingShift(true)
+      try {
+        const res = await fetch(`/api/shifts/check?clientId=${clientId}&date=${reportDate}`)
+        const data = await res.json()
+        setHasShift(data.hasShift)
+      } catch {
+        setHasShift(null)
+      } finally {
+        setCheckingShift(false)
+      }
+    }
+    checkShift()
+  }, [clientId, reportDate])
 
   async function handleImageChange(index: number, file: File | null) {
     if (!file) {
@@ -205,6 +231,14 @@ export default function NewReportClient({ activeClients }: NewReportClientProps)
                     className="mt-2"
                     required
                   />
+                  {checkingShift && (
+                    <p className="text-sm text-muted-foreground mt-1">Dienst controleren...</p>
+                  )}
+                  {hasShift === false && !checkingShift && (
+                    <p className="text-sm text-red-600 mt-1">
+                      U heeft geen dienst op deze datum voor deze cli&euml;nt. Kies een datum waarop u wel een dienst heeft.
+                    </p>
+                  )}
                 </div>
 
                 {/* Content */}
@@ -266,8 +300,8 @@ export default function NewReportClient({ activeClients }: NewReportClientProps)
 
                 {/* Submit */}
                 <div className="flex gap-3">
-                  <Button type="submit" disabled={isSubmitting || isCompressing} className="flex-1">
-                    {isCompressing ? "Afbeelding comprimeren..." : isSubmitting ? "Rapport aanmaken..." : "Rapport Aanmaken"}
+                  <Button type="submit" disabled={isSubmitting || isCompressing || hasShift === false || checkingShift} className="flex-1">
+                    {checkingShift ? "Dienst controleren..." : isCompressing ? "Afbeelding comprimeren..." : isSubmitting ? "Rapport aanmaken..." : "Rapport Aanmaken"}
                   </Button>
                   <Button
                     type="button"

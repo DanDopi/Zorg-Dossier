@@ -63,6 +63,23 @@ interface WondzorgItem {
   nextCareDate: string | null
 }
 
+interface VoedingItem {
+  mealType: string
+  mealTypeLabel: string
+  mealTime: string
+  description: string | null
+  status: "done" | "pending"
+}
+
+interface VochtItem {
+  scheduleId: string
+  intakeTime: string
+  volume: number
+  fluidType: string | null
+  fluidTypeLabel: string | null
+  status: "done" | "pending"
+}
+
 interface ClientTasks {
   client: { id: string; name: string }
   shift: {
@@ -87,8 +104,16 @@ interface ClientTasks {
     urine: { count: number; volume: number }
     fluid: { count: number; volume: number }
   }
-  voeding: { breakfast: boolean; lunch: boolean; dinner: boolean; snack: boolean }
-  rapportage: { count: number }
+  voeding: {
+    items: VoedingItem[]
+    summary: { total: number; done: number; pending: number }
+    breakfast: boolean; lunch: boolean; dinner: boolean; snack: boolean
+  }
+  vocht?: {
+    items: VochtItem[]
+    summary: { total: number; done: number; pending: number }
+  }
+  rapportage: { count: number; status: "done" | "pending" }
   summary: {
     totalTasks: number
     completed: number
@@ -491,7 +516,7 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
                     variant="outline"
                     size="sm"
                     className="mt-1 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
-                    onClick={() => navigateToPage(ct.client.id, ct.client.name, "/dashboard/medicatie")}
+                    onClick={() => navigateToPage(ct.client.id, ct.client.name, `/dashboard/medicatie?date=${selectedDate}`)}
                   >
                     Ga naar Medicatie <ChevronRight className="h-3.5 w-3.5 ml-1" />
                   </Button>
@@ -525,7 +550,7 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
                     variant="outline"
                     size="sm"
                     className="mt-1 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
-                    onClick={() => navigateToPage(ct.client.id, ct.client.name, "/dashboard/voeding?tab=tube-feeding")}
+                    onClick={() => navigateToPage(ct.client.id, ct.client.name, `/dashboard/voeding?tab=tube-feeding&date=${selectedDate}`)}
                   >
                     Ga naar Sondevoeding <ChevronRight className="h-3.5 w-3.5 ml-1" />
                   </Button>
@@ -571,7 +596,7 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
                     variant="outline"
                     size="sm"
                     className="mt-1 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
-                    onClick={() => navigateToPage(ct.client.id, ct.client.name, "/dashboard/verpleegtechnisch")}
+                    onClick={() => navigateToPage(ct.client.id, ct.client.name, `/dashboard/verpleegtechnisch?date=${selectedDate}`)}
                   >
                     Ga naar Verpleegtechnisch <ChevronRight className="h-3.5 w-3.5 ml-1" />
                   </Button>
@@ -616,7 +641,7 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
                     variant="outline"
                     size="sm"
                     className="mt-1 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
-                    onClick={() => navigateToPage(ct.client.id, ct.client.name, "/dashboard/wondzorg")}
+                    onClick={() => navigateToPage(ct.client.id, ct.client.name, `/dashboard/wondzorg?date=${selectedDate}`)}
                   >
                     Ga naar Wondzorg <ChevronRight className="h-3.5 w-3.5 ml-1" />
                   </Button>
@@ -642,46 +667,97 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
                   variant="outline"
                   size="sm"
                   className="mt-1 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
-                  onClick={() => navigateToPage(ct.client.id, ct.client.name, "/dashboard/io-registratie")}
+                  onClick={() => navigateToPage(ct.client.id, ct.client.name, `/dashboard/io-registratie?date=${selectedDate}`)}
                 >
                   Ga naar I&O Registratie <ChevronRight className="h-3.5 w-3.5 ml-1" />
                 </Button>
               </section>
 
               {/* Voeding */}
-              <section>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
-                    <UtensilsCrossed className="h-4 w-4" />
-                    Voeding
-                  </h3>
-                </div>
-                <div className="py-1.5 px-3 rounded-lg bg-gray-50 text-sm flex items-center gap-4">
-                  {[
-                    { key: "breakfast", label: "Ontbijt", done: ct.voeding.breakfast },
-                    { key: "lunch", label: "Lunch", done: ct.voeding.lunch },
-                    { key: "dinner", label: "Avondeten", done: ct.voeding.dinner },
-                    { key: "snack", label: "Snack", done: ct.voeding.snack },
-                  ].map((meal) => (
-                    <span key={meal.key} className={`flex items-center gap-1 ${meal.done ? "text-green-600" : "text-muted-foreground"}`}>
-                      {meal.done ? (
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                      ) : (
-                        <span className="w-3.5 h-3.5 rounded border border-gray-300 inline-block" />
-                      )}
-                      {meal.label}
-                    </span>
-                  ))}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-1 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
-                  onClick={() => navigateToPage(ct.client.id, ct.client.name, "/dashboard/voeding")}
-                >
-                  Ga naar Voeding <ChevronRight className="h-3.5 w-3.5 ml-1" />
-                </Button>
-              </section>
+              {ct.voeding.items && ct.voeding.items.length > 0 && (
+                <section>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
+                      <UtensilsCrossed className="h-4 w-4" />
+                      Voeding ({ct.voeding.summary.done}/{ct.voeding.summary.total})
+                    </h3>
+                  </div>
+                  <div className="space-y-1.5">
+                    {ct.voeding.items.map((item, i) => (
+                      <div
+                        key={`${item.mealType}-${item.mealTime}-${i}`}
+                        className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-gray-50"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-mono text-muted-foreground w-12">{item.mealTime}</span>
+                          <span className="text-sm font-medium">{item.mealTypeLabel}</span>
+                          {item.description && <span className="text-xs text-muted-foreground">{item.description}</span>}
+                        </div>
+                        {item.status === "done" ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                            <CheckCircle2 className="h-3 w-3" /> Geregistreerd
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                            <Clock className="h-3 w-3" /> Wachtend
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-1 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                    onClick={() => navigateToPage(ct.client.id, ct.client.name, `/dashboard/voeding?date=${selectedDate}`)}
+                  >
+                    Ga naar Voeding <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                  </Button>
+                </section>
+              )}
+
+              {/* Vochtinname */}
+              {ct.vocht && ct.vocht.items.length > 0 && (
+                <section>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wide">
+                      <Droplets className="h-4 w-4" />
+                      Vochtinname ({ct.vocht.summary.done}/{ct.vocht.summary.total})
+                    </h3>
+                  </div>
+                  <div className="space-y-1.5">
+                    {ct.vocht.items.map((item, i) => (
+                      <div
+                        key={`${item.scheduleId}-${item.intakeTime}-${i}`}
+                        className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-gray-50"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-mono text-muted-foreground w-12">{item.intakeTime}</span>
+                          <span className="text-sm font-medium">{item.volume}ml</span>
+                          {item.fluidTypeLabel && <span className="text-xs text-muted-foreground">{item.fluidTypeLabel}</span>}
+                        </div>
+                        {item.status === "done" ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                            <CheckCircle2 className="h-3 w-3" /> Geregistreerd
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                            <Clock className="h-3 w-3" /> Wachtend
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-1 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                    onClick={() => navigateToPage(ct.client.id, ct.client.name, `/dashboard/voeding?tab=fluid&date=${selectedDate}`)}
+                  >
+                    Ga naar Vochtinname <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                  </Button>
+                </section>
+              )}
 
               {/* Rapportage */}
               <section>
@@ -691,17 +767,28 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
                     Rapportage
                   </h3>
                 </div>
-                <div className={`py-1.5 px-3 rounded-lg text-sm ${ct.rapportage.count > 0 ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"}`}>
-                  {ct.rapportage.count > 0
-                    ? `${ct.rapportage.count} rapport${ct.rapportage.count !== 1 ? "en" : ""} geschreven`
-                    : "Geen rapport geschreven"
-                  }
+                <div className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-gray-50">
+                  <span className="text-sm">
+                    {ct.rapportage.count > 0
+                      ? `${ct.rapportage.count} rapport${ct.rapportage.count !== 1 ? "en" : ""} geschreven`
+                      : "Geen rapport geschreven"
+                    }
+                  </span>
+                  {ct.rapportage.status === "done" ? (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                      <CheckCircle2 className="h-3 w-3" /> Afgerond
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                      <Clock className="h-3 w-3" /> Wachtend
+                    </span>
+                  )}
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
                   className="mt-1 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
-                  onClick={() => navigateToPage(ct.client.id, ct.client.name, "/dashboard/rapporteren")}
+                  onClick={() => navigateToPage(ct.client.id, ct.client.name, `/dashboard/rapporteren?date=${selectedDate}`)}
                 >
                   Ga naar Rapportages <ChevronRight className="h-3.5 w-3.5 ml-1" />
                 </Button>

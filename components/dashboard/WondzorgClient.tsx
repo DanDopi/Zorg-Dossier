@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useClient } from "@/lib/ClientContext"
 import { getMaxFileSizeClient } from "@/lib/fileValidation"
 import { WoundCarePlansTab, WoundCareReportsTab } from "./WondzorgTabs"
+import Link from "next/link"
 
 interface WoundCarePlan {
   id: string
@@ -100,8 +102,22 @@ interface WondzorgClientProps {
 }
 
 export default function WondzorgClient({ user }: WondzorgClientProps) {
-  const { selectedClient } = useClient()
+  const { selectedClient, setSelectedClient } = useClient()
+  const searchParams = useSearchParams()
   const [activeTab, setActiveTab] = useState<"plans" | "reports">("reports")
+
+  // If clientId is passed in URL, auto-select that client
+  useEffect(() => {
+    const clientIdParam = searchParams.get("clientId")
+    const clientNameParam = searchParams.get("clientName")
+    if (clientIdParam && clientIdParam !== selectedClient?.id) {
+      setSelectedClient({
+        id: clientIdParam,
+        name: clientNameParam || "",
+        email: "",
+      })
+    }
+  }, [searchParams])
   const [isLoading, setIsLoading] = useState(true)
 
   // Wound care plans state
@@ -175,9 +191,10 @@ export default function WondzorgClient({ user }: WondzorgClientProps) {
     : selectedClient?.id
 
   // Shift check: caregivers can only create reports if they have a shift on the selected date
+  // Exception: authorized caregivers can always report (even without a shift)
   const [hasShiftOnDate, setHasShiftOnDate] = useState(false)
   const isFutureDate = selectedDate > new Date().toISOString().split("T")[0]
-  const canCreateReport = isClient || (hasShiftOnDate && !isFutureDate)
+  const canCreateReport = isClient || (isAuthorizedForWoundCare && !isFutureDate) || (hasShiftOnDate && !isFutureDate)
 
   useEffect(() => {
     getMaxFileSizeClient().then(setMaxFileSize)
@@ -635,7 +652,12 @@ export default function WondzorgClient({ user }: WondzorgClientProps) {
 
         {/* Tabs */}
         <div className="flex items-center justify-between">
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            <Link href="/dashboard/wondzorg/reports">
+              <Button variant="outline">
+                Overzicht alle Rapportages
+              </Button>
+            </Link>
             <Button
               variant={activeTab === "reports" ? "default" : "outline"}
               onClick={() => setActiveTab("reports")}
@@ -656,7 +678,7 @@ export default function WondzorgClient({ user }: WondzorgClientProps) {
               title={
                 isFutureDate
                   ? "Kan geen rapportage maken voor toekomstige dagen"
-                  : !hasShiftOnDate
+                  : !hasShiftOnDate && !isAuthorizedForWoundCare
                   ? "U heeft geen dienst op deze dag"
                   : undefined
               }
@@ -764,7 +786,7 @@ export default function WondzorgClient({ user }: WondzorgClientProps) {
                 <span>Rapportage is niet mogelijk voor toekomstige dagen.</span>
               </div>
             )}
-            {isCaregiver && !isLoading && !isFutureDate && !hasShiftOnDate && (
+            {isCaregiver && !isLoading && !isFutureDate && !hasShiftOnDate && !isAuthorizedForWoundCare && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-2 text-amber-800 text-sm">
                 <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />

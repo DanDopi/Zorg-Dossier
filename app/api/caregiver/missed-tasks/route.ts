@@ -3,7 +3,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 
 // GET /api/caregiver/missed-tasks
-// Returns all past shifts (excluding today) with missing reports or pending medications
+// Returns all past shifts (within last 60 days) with missing tasks
 export async function GET() {
   try {
     const session = await auth()
@@ -24,15 +24,18 @@ export async function GET() {
 
     const caregiverId = user.caregiverProfile.id
 
-    // Use local date parsing (same approach as daily-tasks route) to avoid timezone issues
     const now = new Date()
     const todayLocal = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
-    // Fetch all past shifts - no lower bound, look back forever
+    // Limit lookback to 60 days to avoid scanning entire history
+    const lookbackDate = new Date(todayLocal)
+    lookbackDate.setDate(lookbackDate.getDate() - 60)
+
+    // Single query: fetch all past shifts within lookback window
     const shifts = await prisma.shift.findMany({
       where: {
         caregiverId,
-        date: { lt: todayLocal },
+        date: { gte: lookbackDate, lt: todayLocal },
         status: { in: ["FILLED", "COMPLETED"] },
       },
       include: {
@@ -46,14 +49,162 @@ export async function GET() {
       return NextResponse.json({ missedDays: [] })
     }
 
-    // Group shifts by date using local date key
+    // Collect all unique client IDs and the full date range
+    const clientIds = [...new Set(shifts.map(s => s.clientId))]
+    const rangeStart = new Date(lookbackDate)
+    // Add 1 day past today for overnight shift next-day checks
+    const rangeEnd = new Date(todayLocal)
+    rangeEnd.setDate(rangeEnd.getDate() + 1)
+    rangeEnd.setHours(23, 59, 59, 999)
+
+    // Batch queries: fetch all data upfront in parallel
+    const [
+      allReports, allMedications, allAdministrations,
+      allTubeSchedules, allTubeAdmins,
+      allMealSchedules, allMealRecords,
+      allFluidSchedules, allFluidRecords,
+    ] = await Promise.all([
+      // Care reports
+      prisma.careReport.findMany({
+        where: {
+          caregiverId,
+          clientId: { in: clientIds },
+          reportDate: { gte: rangeStart, lte: rangeEnd },
+        },
+        select: { clientId: true, reportDate: true },
+      }),
+      // Medications
+      prisma.medication.findMany({
+        where: {
+          clientId: { in: clientIds },
+          isActive: true,
+          startDate: { lte: rangeEnd },
+          OR: [{ endDate: null }, { endDate: { gte: rangeStart } }],
+        },
+      }),
+      // Medication administrations
+      prisma.medicationAdministration.findMany({
+        where: {
+          clientId: { in: clientIds },
+          scheduledTime: { gte: rangeStart, lte: rangeEnd },
+        },
+      }),
+      // Tube feeding schedules
+      prisma.tubeFeedingSchedule.findMany({
+        where: { clientId: { in: clientIds }, isActive: true },
+      }),
+      // Tube feeding administrations
+      prisma.tubeFeedingAdministration.findMany({
+        where: {
+          clientId: { in: clientIds },
+          scheduledTime: { gte: rangeStart, lte: rangeEnd },
+        },
+      }),
+      // Meal schedules
+      prisma.mealSchedule.findMany({
+        where: { clientId: { in: clientIds }, isActive: true },
+      }),
+      // Meal records
+      prisma.mealRecord.findMany({
+        where: {
+          clientId: { in: clientIds },
+          recordDate: { gte: rangeStart, lte: rangeEnd },
+        },
+        select: { clientId: true, recordDate: true, mealType: true },
+      }),
+      // Fluid intake schedules
+      prisma.fluidIntakeSchedule.findMany({
+        where: { clientId: { in: clientIds }, isActive: true },
+      }),
+      // Fluid intake records
+      prisma.fluidIntakeRecord.findMany({
+        where: {
+          clientId: { in: clientIds },
+          recordDate: { gte: rangeStart, lte: rangeEnd },
+        },
+        select: { clientId: true, recordDate: true, recordTime: true },
+      }),
+    ])
+
+    // Build indexes for O(1) lookups
+
+    // Reports by clientId:dateKey
+    const reportIndex = new Map<string, number>()
+    for (const report of allReports) {
+      const d = new Date(report.reportDate)
+      const key = `${report.clientId}:${formatDateKey(d)}`
+      reportIndex.set(key, (reportIndex.get(key) || 0) + 1)
+    }
+
+    // Medications by clientId
+    const medsByClient = new Map<string, typeof allMedications>()
+    for (const med of allMedications) {
+      if (!medsByClient.has(med.clientId)) medsByClient.set(med.clientId, [])
+      medsByClient.get(med.clientId)!.push(med)
+    }
+
+    // Medication administrations by clientId:dateKey
+    const adminIndex = new Map<string, typeof allAdministrations>()
+    for (const admin of allAdministrations) {
+      const d = new Date(admin.scheduledTime)
+      const key = `${admin.clientId}:${formatDateKey(d)}`
+      if (!adminIndex.has(key)) adminIndex.set(key, [])
+      adminIndex.get(key)!.push(admin)
+    }
+
+    // Tube feeding schedules by clientId
+    const tubeSchedByClient = new Map<string, typeof allTubeSchedules>()
+    for (const s of allTubeSchedules) {
+      if (!tubeSchedByClient.has(s.clientId)) tubeSchedByClient.set(s.clientId, [])
+      tubeSchedByClient.get(s.clientId)!.push(s)
+    }
+
+    // Tube feeding admins by clientId:dateKey
+    const tubeAdminIndex = new Map<string, typeof allTubeAdmins>()
+    for (const a of allTubeAdmins) {
+      const d = new Date(a.scheduledTime)
+      const key = `${a.clientId}:${formatDateKey(d)}`
+      if (!tubeAdminIndex.has(key)) tubeAdminIndex.set(key, [])
+      tubeAdminIndex.get(key)!.push(a)
+    }
+
+    // Meal schedules by clientId
+    const mealSchedByClient = new Map<string, typeof allMealSchedules>()
+    for (const s of allMealSchedules) {
+      if (!mealSchedByClient.has(s.clientId)) mealSchedByClient.set(s.clientId, [])
+      mealSchedByClient.get(s.clientId)!.push(s)
+    }
+
+    // Meal records by clientId:dateKey
+    const mealRecordIndex = new Map<string, typeof allMealRecords>()
+    for (const r of allMealRecords) {
+      const d = new Date(r.recordDate)
+      const key = `${r.clientId}:${formatDateKey(d)}`
+      if (!mealRecordIndex.has(key)) mealRecordIndex.set(key, [])
+      mealRecordIndex.get(key)!.push(r)
+    }
+
+    // Fluid schedules by clientId
+    const fluidSchedByClient = new Map<string, typeof allFluidSchedules>()
+    for (const s of allFluidSchedules) {
+      if (!fluidSchedByClient.has(s.clientId)) fluidSchedByClient.set(s.clientId, [])
+      fluidSchedByClient.get(s.clientId)!.push(s)
+    }
+
+    // Fluid records by clientId:dateKey
+    const fluidRecordIndex = new Map<string, typeof allFluidRecords>()
+    for (const r of allFluidRecords) {
+      const d = new Date(r.recordDate)
+      const key = `${r.clientId}:${formatDateKey(d)}`
+      if (!fluidRecordIndex.has(key)) fluidRecordIndex.set(key, [])
+      fluidRecordIndex.get(key)!.push(r)
+    }
+
+    // Group shifts by date
     const shiftsByDate = new Map<string, typeof shifts>()
     for (const shift of shifts) {
-      const d = new Date(shift.date)
-      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-      if (!shiftsByDate.has(dateKey)) {
-        shiftsByDate.set(dateKey, [])
-      }
+      const dateKey = formatDateKey(new Date(shift.date))
+      if (!shiftsByDate.has(dateKey)) shiftsByDate.set(dateKey, [])
       shiftsByDate.get(dateKey)!.push(shift)
     }
 
@@ -70,104 +221,57 @@ export async function GET() {
         hasReport: boolean
         pendingMedications: number
         totalMedications: number
-        medicationDate: string // date where pending meds actually are (next day for overnight shifts)
+        medicationDate: string
+        pendingSondevoeding: number
+        totalSondevoeding: number
+        pendingVoeding: number
+        totalVoeding: number
+        pendingVocht: number
+        totalVocht: number
       }>
     }> = []
 
-    // Helper: convert "HH:MM" to minutes since midnight
-    function timeToMinutes(time: string): number {
-      const [h, m] = time.split(":").map(Number)
-      return h * 60 + m
-    }
-
-    // Helper: check if a medication time falls within a shift's time range
-    // For overnight shifts, dayPart specifies which part to check:
-    //   "evening" = shift start day (times >= startTime)
-    //   "morning" = next day (times <= endTime)
-    //   "full" = normal non-overnight shift
-    function isMedTimeInShift(
-      medTime: string,
-      shiftStartTime: string,
-      shiftEndTime: string,
-      dayPart: "evening" | "morning" | "full"
-    ): boolean {
-      const medMin = timeToMinutes(medTime)
-      const startMin = timeToMinutes(shiftStartTime)
-      const endMin = timeToMinutes(shiftEndTime)
-
-      if (dayPart === "evening") {
-        return medMin >= startMin
-      } else if (dayPart === "morning") {
-        return medMin <= endMin
-      } else {
-        return medMin >= startMin && medMin <= endMin
-      }
-    }
-
     for (const [dateKey, dayShifts] of shiftsByDate) {
-      // Parse the date key as a local date
       const [year, month, day] = dateKey.split("-").map(Number)
       const shiftDate = new Date(year, month - 1, day)
       const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0)
       const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999)
+      const dayOfWeek = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][shiftDate.getDay()]
 
       const dayClients: typeof missedDays[0]["clients"] = []
       const processedClients = new Set<string>()
 
       for (const shift of dayShifts) {
-        // Skip if we already processed this client for this day
         if (processedClients.has(shift.clientId)) continue
         processedClients.add(shift.clientId)
 
-        // Check for care reports on this date for this client by this caregiver
-        const reportCount = await prisma.careReport.count({
-          where: {
-            clientId: shift.clientId,
-            caregiverId,
-            reportDate: { gte: startOfDay, lte: endOfDay },
-          },
-        })
+        // Look up report count from index
+        const reportCount = reportIndex.get(`${shift.clientId}:${dateKey}`) || 0
 
-        // Determine if this is an overnight shift
+        // --- Medication calculation ---
         const shiftStartMin = timeToMinutes(shift.startTime)
         const shiftEndMin = timeToMinutes(shift.endTime)
         const isOvernightShift = shiftEndMin < shiftStartMin
 
-        // Fetch active medications for this client on the shift date
-        const medications = await prisma.medication.findMany({
-          where: {
-            clientId: shift.clientId,
-            isActive: true,
-            startDate: { lte: endOfDay },
-            OR: [
-              { endDate: null },
-              { endDate: { gte: startOfDay } },
-            ],
-          },
+        const clientMeds = (medsByClient.get(shift.clientId) || []).filter(med => {
+          const medStart = new Date(med.startDate)
+          const medEnd = med.endDate ? new Date(med.endDate) : null
+          return medStart <= endOfDay && (!medEnd || medEnd >= startOfDay)
         })
 
-        // Fetch medication administrations for the shift date
-        const administrations = await prisma.medicationAdministration.findMany({
-          where: {
-            clientId: shift.clientId,
-            scheduledTime: { gte: startOfDay, lte: endOfDay },
-          },
-        })
+        const administrations = adminIndex.get(`${shift.clientId}:${dateKey}`) || []
 
-        // Count medication doses that fall within this shift's time range on the shift date
         let totalScheduledDoses = 0
         let administeredDoses = 0
-        // Track pending doses on next day separately (for overnight shift navigation)
         let nextDayPendingDoses = 0
 
-        for (const med of medications) {
+        for (const med of clientMeds) {
           try {
             const times = JSON.parse(med.times as string) as string[]
             for (const time of times) {
               const dayPart = isOvernightShift ? "evening" : "full"
               if (isMedTimeInShift(time, shift.startTime, shift.endTime, dayPart)) {
                 totalScheduledDoses++
-                // Check if this dose was administered
                 const [th, tm] = time.split(":").map(Number)
                 const hasAdmin = administrations.some(admin => {
                   const adminTime = new Date(admin.scheduledTime)
@@ -185,36 +289,27 @@ export async function GET() {
 
         // For overnight shifts, also count next-day morning medications
         if (isOvernightShift) {
+          const nextDay = new Date(year, month - 1, day + 1)
+          const nextDateKey = formatDateKey(nextDay)
           const nextStartOfDay = new Date(year, month - 1, day + 1, 0, 0, 0, 0)
           const nextEndOfDay = new Date(year, month - 1, day + 1, 23, 59, 59, 999)
 
-          const nextDayMedications = await prisma.medication.findMany({
-            where: {
-              clientId: shift.clientId,
-              isActive: true,
-              startDate: { lte: nextEndOfDay },
-              OR: [
-                { endDate: null },
-                { endDate: { gte: nextStartOfDay } },
-              ],
-            },
+          const nextDayMeds = (medsByClient.get(shift.clientId) || []).filter(med => {
+            const medStart = new Date(med.startDate)
+            const medEnd = med.endDate ? new Date(med.endDate) : null
+            return medStart <= nextEndOfDay && (!medEnd || medEnd >= nextStartOfDay)
           })
 
-          const nextDayAdministrations = await prisma.medicationAdministration.findMany({
-            where: {
-              clientId: shift.clientId,
-              scheduledTime: { gte: nextStartOfDay, lte: nextEndOfDay },
-            },
-          })
+          const nextDayAdmins = adminIndex.get(`${shift.clientId}:${nextDateKey}`) || []
 
-          for (const med of nextDayMedications) {
+          for (const med of nextDayMeds) {
             try {
               const times = JSON.parse(med.times as string) as string[]
               for (const time of times) {
                 if (isMedTimeInShift(time, shift.startTime, shift.endTime, "morning")) {
                   totalScheduledDoses++
                   const [th, tm] = time.split(":").map(Number)
-                  const hasAdmin = nextDayAdministrations.some(admin => {
+                  const hasAdmin = nextDayAdmins.some(admin => {
                     const adminTime = new Date(admin.scheduledTime)
                     return admin.medicationId === med.id &&
                       adminTime.getHours() === th &&
@@ -235,17 +330,56 @@ export async function GET() {
 
         const pendingDoses = Math.max(0, totalScheduledDoses - administeredDoses)
 
-        // Determine which date to navigate to for medication page
-        // For overnight shifts: if pending meds are on the next morning, link to next day
-        const nextDateKey = `${year}-${String(month).padStart(2, "0")}-${String(day + 1).padStart(2, "0")}`
         let medDate = dateKey
         if (isOvernightShift && nextDayPendingDoses > 0) {
-          // Most/all pending meds are on the next morning
           const nd = new Date(year, month - 1, day + 1)
-          medDate = `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, "0")}-${String(nd.getDate()).padStart(2, "0")}`
+          medDate = formatDateKey(nd)
         }
 
-        const hasIssues = reportCount === 0 || pendingDoses > 0
+        // --- Tube feeding calculation ---
+        const clientTubeScheds = tubeSchedByClient.get(shift.clientId) || []
+        const filteredTubeScheds = filterSchedulesByRecurrence(clientTubeScheds, shiftDate, dayOfWeek)
+        const tubeAdmins = tubeAdminIndex.get(`${shift.clientId}:${dateKey}`) || []
+        let tubePending = 0
+        for (const sched of filteredTubeScheds) {
+          const [h, m] = sched.feedingTime.split(":").map(Number)
+          const hasAdmin = tubeAdmins.some((a: any) =>
+            a.scheduleId === sched.id &&
+            new Date(a.scheduledTime).getHours() === h &&
+            new Date(a.scheduledTime).getMinutes() === m
+          )
+          if (!hasAdmin) tubePending++
+        }
+
+        // --- Meal schedule calculation ---
+        const clientMealScheds = mealSchedByClient.get(shift.clientId) || []
+        const filteredMealScheds = filterSchedulesByRecurrence(clientMealScheds, shiftDate, dayOfWeek)
+        const dayMealRecords = mealRecordIndex.get(`${shift.clientId}:${dateKey}`) || []
+        const mealTypes = dayMealRecords.map(r => r.mealType)
+        let mealPending = 0
+        for (const sched of filteredMealScheds) {
+          if (!mealTypes.includes(sched.mealType)) mealPending++
+        }
+
+        // --- Fluid schedule calculation ---
+        const clientFluidScheds = fluidSchedByClient.get(shift.clientId) || []
+        const filteredFluidScheds = filterSchedulesByRecurrence(clientFluidScheds, shiftDate, dayOfWeek)
+        const dayFluidRecords = fluidRecordIndex.get(`${shift.clientId}:${dateKey}`) || []
+        let fluidPending = 0
+        for (const sched of filteredFluidScheds) {
+          const [schedH, schedM] = sched.intakeTime.split(":").map(Number)
+          const schedMinutes = schedH * 60 + schedM
+          const matched = dayFluidRecords.some(r => {
+            const rt = new Date(r.recordTime)
+            const recMinutes = rt.getHours() * 60 + rt.getMinutes()
+            return Math.abs(recMinutes - schedMinutes) <= 60
+          })
+          if (!matched) fluidPending++
+        }
+
+        // Check if there are any issues
+        const hasIssues = reportCount === 0 || pendingDoses > 0 ||
+          tubePending > 0 || mealPending > 0 || fluidPending > 0
 
         if (hasIssues) {
           dayClients.push({
@@ -259,6 +393,12 @@ export async function GET() {
             pendingMedications: pendingDoses,
             totalMedications: totalScheduledDoses,
             medicationDate: medDate,
+            pendingSondevoeding: tubePending,
+            totalSondevoeding: filteredTubeScheds.length,
+            pendingVoeding: mealPending,
+            totalVoeding: filteredMealScheds.length,
+            pendingVocht: fluidPending,
+            totalVocht: filteredFluidScheds.length,
           })
         }
       }
@@ -284,4 +424,65 @@ export async function GET() {
       { status: 500 }
     )
   }
+}
+
+// --- Helper functions ---
+
+function formatDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}
+
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number)
+  return h * 60 + m
+}
+
+function isMedTimeInShift(
+  medTime: string,
+  shiftStartTime: string,
+  shiftEndTime: string,
+  dayPart: "evening" | "morning" | "full"
+): boolean {
+  const medMin = timeToMinutes(medTime)
+  const startMin = timeToMinutes(shiftStartTime)
+  const endMin = timeToMinutes(shiftEndTime)
+
+  if (dayPart === "evening") return medMin >= startMin
+  if (dayPart === "morning") return medMin <= endMin
+  return medMin >= startMin && medMin <= endMin
+}
+
+function filterSchedulesByRecurrence(
+  allSchedules: any[],
+  targetDate: Date,
+  dayOfWeek: string
+) {
+  return allSchedules.filter((schedule) => {
+    const scheduleStartDate = new Date(schedule.startDate)
+    scheduleStartDate.setHours(0, 0, 0, 0)
+    const targetDateOnly = new Date(targetDate)
+    targetDateOnly.setHours(0, 0, 0, 0)
+
+    if (targetDateOnly < scheduleStartDate) return false
+
+    if (schedule.endDate) {
+      const scheduleEndDate = new Date(schedule.endDate)
+      scheduleEndDate.setHours(23, 59, 59, 999)
+      if (targetDateOnly > scheduleEndDate) return false
+    }
+
+    if (schedule.recurrenceType === "one_time") {
+      return targetDateOnly.getTime() === scheduleStartDate.getTime()
+    } else if (schedule.recurrenceType === "daily") {
+      return true
+    } else if (schedule.recurrenceType === "weekly" || schedule.recurrenceType === "specific_days") {
+      if (schedule.daysOfWeek) {
+        const selectedDays = JSON.parse(schedule.daysOfWeek)
+        return selectedDays.includes(dayOfWeek)
+      }
+      return false
+    }
+
+    return true
+  })
 }

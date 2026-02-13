@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { TimeOffNotificationPanel } from "@/components/dashboard/TimeOffNotificationPanel"
-import { Pill, AlertTriangle, CheckCircle2, Clock, ClipboardCheck, FileText, CalendarOff, ChevronRight, AlertCircle } from "lucide-react"
+import { Pill, AlertTriangle, CheckCircle2, Clock, ClipboardCheck, FileText, CalendarOff, ChevronRight, AlertCircle, Droplets, Utensils, Droplet, Activity, Heart } from "lucide-react"
 
 interface UserWithProfile {
   id: string
@@ -47,7 +47,9 @@ interface DailyClientTask {
   sondevoeding: { summary: { total: number; given: number; skipped: number; pending: number } }
   verpleegtechnisch: { items: { isOverdue: boolean }[] }
   wondzorg: { items: { isOverdue: boolean }[] }
-  rapportage: { count: number }
+  voeding: { items: any[]; summary: { total: number; done: number; pending: number } }
+  vocht: { items: any[]; summary: { total: number; done: number; pending: number } }
+  rapportage: { count: number; status: "done" | "pending" }
   summary: { totalTasks: number; completed: number; pending: number; overdue: number; status: "all_done" | "pending" | "overdue" }
 }
 
@@ -68,6 +70,12 @@ interface MissedDayClient {
   pendingMedications: number
   totalMedications: number
   medicationDate?: string
+  pendingSondevoeding: number
+  totalSondevoeding: number
+  pendingVoeding: number
+  totalVoeding: number
+  pendingVocht: number
+  totalVocht: number
 }
 
 interface MissedDay {
@@ -267,43 +275,126 @@ export default function CaregiverDashboard({ user, clients }: CaregiverDashboard
                 <div className="space-y-2">
                   {dailyTasks.clients.map((ct) => {
                     const todayDate = new Date().toISOString().split("T")[0]
+                    const cp = `&clientId=${ct.client.id}&clientName=${encodeURIComponent(ct.client.name)}`
+                    const nursingOverdue = ct.verpleegtechnisch.items.filter((i) => i.isOverdue).length
+                    const woundOverdue = ct.wondzorg.items.filter((i) => i.isOverdue).length
                     return (
-                      <div key={ct.client.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50 border hover:shadow-sm transition-shadow">
-                        <Link href="/dashboard/mijn-taken" className="no-underline flex items-center gap-3 flex-1 min-w-0">
+                      <div key={ct.client.id} className="py-2 px-3 rounded-lg bg-gray-50 border hover:shadow-sm transition-shadow">
+                        <div className="flex items-center gap-3">
                           <div
                             className="w-2 h-8 rounded-full flex-shrink-0"
                             style={{ backgroundColor: ct.shift.shiftTypeColor }}
                           />
-                          <div className="min-w-0">
-                            <span className="text-sm font-medium">{ct.client.name}</span>
+                          <div className="min-w-0 flex-1">
+                            <Link href="/dashboard/mijn-taken" className="no-underline">
+                              <span className="text-sm font-medium hover:underline">{ct.client.name}</span>
+                            </Link>
                             <p className="text-xs text-muted-foreground">
                               {ct.shift.shiftTypeName} {ct.shift.startTime} - {ct.shift.endTime}
                             </p>
                           </div>
-                        </Link>
-                        <div className="flex items-center gap-3 text-xs flex-shrink-0">
-                          {ct.rapportage.count > 0 ? (
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs mt-2 pl-5">
+                          {/* Rapport */}
+                          {ct.rapportage.status === "done" ? (
                             <span className="flex items-center gap-1 text-green-600 font-medium">
-                              <FileText className="h-3.5 w-3.5" /> Rapport geschreven
+                              <FileText className="h-3.5 w-3.5" /> Rapport
                             </span>
                           ) : (
-                            <Link href={`/dashboard/reports/new?client=${ct.client.id}&date=${todayDate}`} className="no-underline" onClick={(e) => e.stopPropagation()}>
+                            <Link href={`/dashboard/reports/new?client=${ct.client.id}&date=${todayDate}`} className="no-underline">
                               <span className="flex items-center gap-1 text-red-600 font-medium hover:underline cursor-pointer">
-                                <FileText className="h-3.5 w-3.5" /> Geen rapport
+                                <FileText className="h-3.5 w-3.5" /> Rapport
                               </span>
                             </Link>
                           )}
-                          {ct.medicatie.summary.total > 0 && ct.medicatie.summary.pending > 0 ? (
-                            <Link href={`/dashboard/medicatie?date=${todayDate}`} className="no-underline" onClick={(e) => e.stopPropagation()}>
-                              <span className="flex items-center gap-1 text-amber-600 font-medium hover:underline cursor-pointer">
-                                <Pill className="h-3.5 w-3.5" /> {ct.medicatie.summary.pending} medicatie open
+                          {/* Medicatie */}
+                          {ct.medicatie.summary.total > 0 && (
+                            ct.medicatie.summary.pending > 0 ? (
+                              <Link href={`/dashboard/medicatie?date=${todayDate}${cp}`} className="no-underline">
+                                <span className="flex items-center gap-1 text-amber-600 font-medium hover:underline cursor-pointer">
+                                  <Pill className="h-3.5 w-3.5" /> {ct.medicatie.summary.pending} med. open
+                                </span>
+                              </Link>
+                            ) : (
+                              <span className="flex items-center gap-1 text-green-600 font-medium">
+                                <Pill className="h-3.5 w-3.5" /> Medicatie
                               </span>
-                            </Link>
-                          ) : ct.medicatie.summary.total > 0 ? (
-                            <span className="flex items-center gap-1 text-green-600 font-medium">
-                              <Pill className="h-3.5 w-3.5" /> Medicatie afgerond
-                            </span>
-                          ) : null}
+                            )
+                          )}
+                          {/* Sondevoeding */}
+                          {ct.sondevoeding.summary.total > 0 && (
+                            ct.sondevoeding.summary.pending > 0 ? (
+                              <Link href={`/dashboard/voeding?date=${todayDate}&tab=tube-feeding${cp}`} className="no-underline">
+                                <span className="flex items-center gap-1 text-amber-600 font-medium hover:underline cursor-pointer">
+                                  <Droplets className="h-3.5 w-3.5" /> {ct.sondevoeding.summary.pending} sonde open
+                                </span>
+                              </Link>
+                            ) : (
+                              <span className="flex items-center gap-1 text-green-600 font-medium">
+                                <Droplets className="h-3.5 w-3.5" /> Sondevoeding
+                              </span>
+                            )
+                          )}
+                          {/* Voeding (maaltijden) */}
+                          {ct.voeding?.summary.total > 0 && (
+                            ct.voeding.summary.pending > 0 ? (
+                              <Link href={`/dashboard/voeding?date=${todayDate}&tab=meals${cp}`} className="no-underline">
+                                <span className="flex items-center gap-1 text-amber-600 font-medium hover:underline cursor-pointer">
+                                  <Utensils className="h-3.5 w-3.5" /> {ct.voeding.summary.pending} maaltijd open
+                                </span>
+                              </Link>
+                            ) : (
+                              <span className="flex items-center gap-1 text-green-600 font-medium">
+                                <Utensils className="h-3.5 w-3.5" /> Voeding
+                              </span>
+                            )
+                          )}
+                          {/* Vochtinname */}
+                          {ct.vocht?.summary.total > 0 && (
+                            ct.vocht.summary.pending > 0 ? (
+                              <Link href={`/dashboard/voeding?date=${todayDate}&tab=fluid-balance${cp}`} className="no-underline">
+                                <span className="flex items-center gap-1 text-amber-600 font-medium hover:underline cursor-pointer">
+                                  <Droplet className="h-3.5 w-3.5" /> {ct.vocht.summary.pending} vocht open
+                                </span>
+                              </Link>
+                            ) : (
+                              <span className="flex items-center gap-1 text-green-600 font-medium">
+                                <Droplet className="h-3.5 w-3.5" /> Vocht
+                              </span>
+                            )
+                          )}
+                          {/* Verpleegtechnisch */}
+                          {ct.verpleegtechnisch.items.length > 0 && (
+                            nursingOverdue > 0 ? (
+                              <Link href={`/dashboard/verpleegtechnisch?date=${todayDate}${cp}`} className="no-underline">
+                                <span className="flex items-center gap-1 text-red-600 font-medium hover:underline cursor-pointer">
+                                  <Activity className="h-3.5 w-3.5" /> {nursingOverdue} verpl. achterstallig
+                                </span>
+                              </Link>
+                            ) : (
+                              <Link href={`/dashboard/verpleegtechnisch?date=${todayDate}${cp}`} className="no-underline">
+                                <span className="flex items-center gap-1 text-amber-600 font-medium hover:underline cursor-pointer">
+                                  <Activity className="h-3.5 w-3.5" /> {ct.verpleegtechnisch.items.length} verpl. open
+                                </span>
+                              </Link>
+                            )
+                          )}
+                          {/* Wondzorg */}
+                          {ct.wondzorg.items.length > 0 && (
+                            woundOverdue > 0 ? (
+                              <Link href={`/dashboard/wondzorg?date=${todayDate}${cp}`} className="no-underline">
+                                <span className="flex items-center gap-1 text-red-600 font-medium hover:underline cursor-pointer">
+                                  <Heart className="h-3.5 w-3.5" /> {woundOverdue} wond achterstallig
+                                </span>
+                              </Link>
+                            ) : (
+                              <Link href={`/dashboard/wondzorg?date=${todayDate}${cp}`} className="no-underline">
+                                <span className="flex items-center gap-1 text-amber-600 font-medium hover:underline cursor-pointer">
+                                  <Heart className="h-3.5 w-3.5" /> {ct.wondzorg.items.length} wondzorg open
+                                </span>
+                              </Link>
+                            )
+                          )}
                         </div>
                       </div>
                     )
@@ -325,41 +416,72 @@ export default function CaregiverDashboard({ user, clients }: CaregiverDashboard
                       <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                         {day.dateLabel}
                       </h4>
-                      {day.clients.map((client) => (
-                        <div
-                          key={`${day.date}-${client.clientId}`}
-                          className="flex items-center justify-between py-2 px-3 rounded-lg bg-red-50 border border-red-100 hover:shadow-sm transition-shadow"
-                        >
-                          <Link href={`/dashboard/mijn-taken?date=${day.date}`} className="no-underline flex items-center gap-3 flex-1 min-w-0">
-                            <div
-                              className="w-2 h-8 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: client.shiftTypeColor }}
-                            />
-                            <div className="min-w-0">
-                              <span className="text-sm font-medium">{client.clientName}</span>
-                              <p className="text-xs text-muted-foreground">
-                                {client.shiftTypeName} {client.startTime} - {client.endTime}
-                              </p>
+                      {day.clients.map((client) => {
+                        const mcp = `&clientId=${client.clientId}&clientName=${encodeURIComponent(client.clientName)}`
+                        return (
+                          <div
+                            key={`${day.date}-${client.clientId}`}
+                            className="py-2 px-3 rounded-lg bg-red-50 border border-red-100 hover:shadow-sm transition-shadow"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div
+                                className="w-2 h-8 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: client.shiftTypeColor }}
+                              />
+                              <div className="min-w-0 flex-1">
+                                <Link href={`/dashboard/mijn-taken?date=${day.date}`} className="no-underline">
+                                  <span className="text-sm font-medium hover:underline">{client.clientName}</span>
+                                </Link>
+                                <p className="text-xs text-muted-foreground">
+                                  {client.shiftTypeName} {client.startTime} - {client.endTime}
+                                </p>
+                              </div>
                             </div>
-                          </Link>
-                          <div className="flex items-center gap-3 text-xs flex-shrink-0">
-                            {!client.hasReport && (
-                              <Link href={`/dashboard/reports/new?client=${client.clientId}&date=${day.date}`} className="no-underline" onClick={(e) => e.stopPropagation()}>
-                                <span className="flex items-center gap-1 text-red-600 font-medium hover:underline cursor-pointer">
-                                  <FileText className="h-3.5 w-3.5" /> Geen rapport
-                                </span>
-                              </Link>
-                            )}
-                            {client.pendingMedications > 0 && (
-                              <Link href={`/dashboard/medicatie?date=${client.medicationDate || day.date}`} className="no-underline" onClick={(e) => e.stopPropagation()}>
-                                <span className="flex items-center gap-1 text-amber-600 font-medium hover:underline cursor-pointer">
-                                  <Pill className="h-3.5 w-3.5" /> {client.pendingMedications} medicatie open
-                                </span>
-                              </Link>
-                            )}
+                            <div className="flex flex-wrap items-center gap-2 text-xs mt-2 pl-5">
+                              {/* Rapport */}
+                              {!client.hasReport && (
+                                <Link href={`/dashboard/reports/new?client=${client.clientId}&date=${day.date}`} className="no-underline">
+                                  <span className="flex items-center gap-1 text-red-600 font-medium hover:underline cursor-pointer">
+                                    <FileText className="h-3.5 w-3.5" /> Rapport
+                                  </span>
+                                </Link>
+                              )}
+                              {/* Medicatie */}
+                              {client.pendingMedications > 0 && (
+                                <Link href={`/dashboard/medicatie?date=${client.medicationDate || day.date}${mcp}`} className="no-underline">
+                                  <span className="flex items-center gap-1 text-amber-600 font-medium hover:underline cursor-pointer">
+                                    <Pill className="h-3.5 w-3.5" /> {client.pendingMedications} med. open
+                                  </span>
+                                </Link>
+                              )}
+                              {/* Sondevoeding */}
+                              {client.pendingSondevoeding > 0 && (
+                                <Link href={`/dashboard/voeding?date=${day.date}&tab=tube-feeding${mcp}`} className="no-underline">
+                                  <span className="flex items-center gap-1 text-amber-600 font-medium hover:underline cursor-pointer">
+                                    <Droplets className="h-3.5 w-3.5" /> {client.pendingSondevoeding} sonde open
+                                  </span>
+                                </Link>
+                              )}
+                              {/* Voeding */}
+                              {client.pendingVoeding > 0 && (
+                                <Link href={`/dashboard/voeding?date=${day.date}&tab=meals${mcp}`} className="no-underline">
+                                  <span className="flex items-center gap-1 text-amber-600 font-medium hover:underline cursor-pointer">
+                                    <Utensils className="h-3.5 w-3.5" /> {client.pendingVoeding} maaltijd open
+                                  </span>
+                                </Link>
+                              )}
+                              {/* Vochtinname */}
+                              {client.pendingVocht > 0 && (
+                                <Link href={`/dashboard/voeding?date=${day.date}&tab=fluid-balance${mcp}`} className="no-underline">
+                                  <span className="flex items-center gap-1 text-amber-600 font-medium hover:underline cursor-pointer">
+                                    <Droplet className="h-3.5 w-3.5" /> {client.pendingVocht} vocht open
+                                  </span>
+                                </Link>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   ))}
                 </div>
