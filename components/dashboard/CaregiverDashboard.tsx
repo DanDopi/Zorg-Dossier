@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { TimeOffNotificationPanel } from "@/components/dashboard/TimeOffNotificationPanel"
-import { Pill, AlertTriangle, CheckCircle2, Clock, ClipboardCheck, FileText, CalendarOff, ChevronRight } from "lucide-react"
+import { Pill, AlertTriangle, CheckCircle2, Clock, ClipboardCheck, FileText, CalendarOff, ChevronRight, AlertCircle } from "lucide-react"
 
 interface UserWithProfile {
   id: string
@@ -57,6 +57,25 @@ interface DailyTasksData {
   globalSummary: { totalTasks: number; completed: number; pending: number; overdue: number }
 }
 
+interface MissedDayClient {
+  clientId: string
+  clientName: string
+  shiftTypeName: string
+  shiftTypeColor: string
+  startTime: string
+  endTime: string
+  hasReport: boolean
+  pendingMedications: number
+  totalMedications: number
+  medicationDate?: string
+}
+
+interface MissedDay {
+  date: string
+  dateLabel: string
+  clients: MissedDayClient[]
+}
+
 interface CaregiverDashboardProps {
   user: UserWithProfile & {
     caregiverProfile?: {
@@ -75,12 +94,15 @@ export default function CaregiverDashboard({ user, clients }: CaregiverDashboard
   const [isLoadingTimeOff, setIsLoadingTimeOff] = useState(true)
   const [dailyTasks, setDailyTasks] = useState<DailyTasksData | null>(null)
   const [isLoadingTasks, setIsLoadingTasks] = useState(true)
+  const [missedDays, setMissedDays] = useState<MissedDay[]>([])
+  const [isLoadingMissed, setIsLoadingMissed] = useState(true)
 
   useEffect(() => {
     fetchInvitations()
     fetchRecentReports()
     fetchTimeOffNotifications()
     fetchDailyTasks()
+    fetchMissedTasks()
   }, [])
 
   async function fetchInvitations() {
@@ -148,6 +170,21 @@ export default function CaregiverDashboard({ user, clients }: CaregiverDashboard
     }
   }
 
+  async function fetchMissedTasks() {
+    try {
+      setIsLoadingMissed(true)
+      const response = await fetch("/api/caregiver/missed-tasks")
+      if (response.ok) {
+        const data = await response.json()
+        setMissedDays(data.missedDays || [])
+      }
+    } catch (error) {
+      console.error("Failed to fetch missed tasks:", error)
+    } finally {
+      setIsLoadingMissed(false)
+    }
+  }
+
   const handleDismiss = async (id: string) => {
     try {
       const response = await fetch("/api/scheduling/time-off", {
@@ -195,140 +232,137 @@ export default function CaregiverDashboard({ user, clients }: CaregiverDashboard
           isLoading={isLoadingTimeOff}
         />
 
-        {/* Taken Vandaag */}
+        {/* Taken Overzicht */}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2">
                   <ClipboardCheck className="h-5 w-5" />
-                  Taken Vandaag
+                  Taken Overzicht
                 </CardTitle>
-                <CardDescription>Uw taken op basis van uw rooster vandaag</CardDescription>
+                <CardDescription>Uw taken vandaag en openstaande taken van afgelopen dagen</CardDescription>
               </div>
-              {dailyTasks && dailyTasks.clients.length > 0 && (
-                <Link href="/dashboard/mijn-taken">
-                  <Button variant="outline" size="sm">
-                    Bekijk Alle Taken <ChevronRight className="h-3.5 w-3.5 ml-1" />
-                  </Button>
-                </Link>
-              )}
+              <Link href="/dashboard/mijn-taken">
+                <Button variant="outline" size="sm">
+                  Bekijk Alle Taken <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                </Button>
+              </Link>
             </div>
           </CardHeader>
-          <CardContent>
-            {isLoadingTasks ? (
-              <div className="text-center py-6">
-                <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
-              </div>
-            ) : !dailyTasks || dailyTasks.clients.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground">
-                <CalendarOff className="h-10 w-10 mx-auto text-gray-300 mb-3" />
-                <p>Geen diensten vandaag</p>
-                <Link href="/dashboard/mijn-rooster">
-                  <Button variant="ghost" size="sm" className="mt-2">Bekijk Mijn Rooster</Button>
-                </Link>
-              </div>
-            ) : (
-              <div className="grid gap-3 md:grid-cols-2">
-                {dailyTasks.clients.map((ct) => {
-                  const borderColor =
-                    ct.summary.status === "overdue"
-                      ? "border-l-red-500"
-                      : ct.summary.status === "pending"
-                      ? "border-l-amber-500"
-                      : "border-l-green-500"
+          <CardContent className="space-y-6">
+            {/* Vandaag */}
+            <div>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Vandaag</h3>
+              {isLoadingTasks ? (
+                <div className="text-center py-6">
+                  <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
+                </div>
+              ) : !dailyTasks || dailyTasks.clients.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground">
+                  <CalendarOff className="h-8 w-8 mx-auto text-gray-300 mb-2" />
+                  <p className="text-sm">Geen diensten vandaag</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {dailyTasks.clients.map((ct) => {
+                    const todayDate = new Date().toISOString().split("T")[0]
+                    return (
+                      <div key={ct.client.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50 border hover:shadow-sm transition-shadow">
+                        <Link href="/dashboard/mijn-taken" className="no-underline flex items-center gap-3 flex-1 min-w-0">
+                          <div
+                            className="w-2 h-8 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: ct.shift.shiftTypeColor }}
+                          />
+                          <div className="min-w-0">
+                            <span className="text-sm font-medium">{ct.client.name}</span>
+                            <p className="text-xs text-muted-foreground">
+                              {ct.shift.shiftTypeName} {ct.shift.startTime} - {ct.shift.endTime}
+                            </p>
+                          </div>
+                        </Link>
+                        <div className="flex items-center gap-3 text-xs flex-shrink-0">
+                          {ct.rapportage.count > 0 ? (
+                            <span className="flex items-center gap-1 text-green-600 font-medium">
+                              <FileText className="h-3.5 w-3.5" /> Rapport geschreven
+                            </span>
+                          ) : (
+                            <Link href={`/dashboard/reports/new?client=${ct.client.id}&date=${todayDate}`} className="no-underline" onClick={(e) => e.stopPropagation()}>
+                              <span className="flex items-center gap-1 text-red-600 font-medium hover:underline cursor-pointer">
+                                <FileText className="h-3.5 w-3.5" /> Geen rapport
+                              </span>
+                            </Link>
+                          )}
+                          {ct.medicatie.summary.total > 0 && ct.medicatie.summary.pending > 0 ? (
+                            <Link href={`/dashboard/medicatie?date=${todayDate}`} className="no-underline" onClick={(e) => e.stopPropagation()}>
+                              <span className="flex items-center gap-1 text-amber-600 font-medium hover:underline cursor-pointer">
+                                <Pill className="h-3.5 w-3.5" /> {ct.medicatie.summary.pending} medicatie open
+                              </span>
+                            </Link>
+                          ) : ct.medicatie.summary.total > 0 ? (
+                            <span className="flex items-center gap-1 text-green-600 font-medium">
+                              <Pill className="h-3.5 w-3.5" /> Medicatie afgerond
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
 
-                  return (
-                    <Link key={ct.client.id} href="/dashboard/mijn-taken" className="no-underline">
-                      <Card className={`border-l-4 ${borderColor} hover:shadow-md transition-shadow cursor-pointer h-full`}>
-                        <CardContent className="p-4">
-                          <div className="flex items-center gap-2 mb-1">
+            {/* Gemiste Taken */}
+            {!isLoadingMissed && missedDays.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <AlertCircle className="h-4 w-4 text-red-600" />
+                  <h3 className="text-sm font-semibold text-red-700 uppercase tracking-wide">Gemiste Taken</h3>
+                </div>
+                <div className="max-h-64 overflow-y-auto space-y-3 pr-1">
+                  {missedDays.map((day) => (
+                    <div key={day.date} className="space-y-2">
+                      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        {day.dateLabel}
+                      </h4>
+                      {day.clients.map((client) => (
+                        <div
+                          key={`${day.date}-${client.clientId}`}
+                          className="flex items-center justify-between py-2 px-3 rounded-lg bg-red-50 border border-red-100 hover:shadow-sm transition-shadow"
+                        >
+                          <Link href={`/dashboard/mijn-taken?date=${day.date}`} className="no-underline flex items-center gap-3 flex-1 min-w-0">
                             <div
-                              className="w-2.5 h-6 rounded-full"
-                              style={{ backgroundColor: ct.shift.shiftTypeColor }}
+                              className="w-2 h-8 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: client.shiftTypeColor }}
                             />
-                            <h4 className="font-semibold">{ct.client.name}</h4>
-                          </div>
-                          <p className="text-xs text-muted-foreground mb-3">
-                            {ct.shift.shiftTypeName} {ct.shift.startTime} - {ct.shift.endTime}
-                          </p>
-
-                          <div className="space-y-1 text-sm">
-                            {ct.medicatie.summary.total > 0 && (
-                              <div className="flex items-center justify-between">
-                                <span className="flex items-center gap-1.5 text-muted-foreground">
-                                  <Pill className="h-3.5 w-3.5" /> Medicatie
-                                </span>
-                                <span className={ct.medicatie.summary.pending > 0 ? "text-amber-600" : "text-green-600"}>
-                                  {ct.medicatie.summary.given + ct.medicatie.summary.skipped}/{ct.medicatie.summary.total}
-                                </span>
-                              </div>
-                            )}
-                            {ct.sondevoeding.summary.total > 0 && (
-                              <div className="flex items-center justify-between">
-                                <span className="flex items-center gap-1.5 text-muted-foreground">
-                                  <Clock className="h-3.5 w-3.5" /> Sondevoeding
-                                </span>
-                                <span className={ct.sondevoeding.summary.pending > 0 ? "text-amber-600" : "text-green-600"}>
-                                  {ct.sondevoeding.summary.given + ct.sondevoeding.summary.skipped}/{ct.sondevoeding.summary.total}
-                                </span>
-                              </div>
-                            )}
-                            {ct.verpleegtechnisch.items.length > 0 && (
-                              <div className="flex items-center justify-between">
-                                <span className="flex items-center gap-1.5 text-muted-foreground">
-                                  <ClipboardCheck className="h-3.5 w-3.5" /> Verpleegtechnisch
-                                </span>
-                                <span className={ct.verpleegtechnisch.items.some(i => i.isOverdue) ? "text-red-600 font-medium" : "text-amber-600"}>
-                                  {ct.verpleegtechnisch.items.filter(i => i.isOverdue).length > 0
-                                    ? `${ct.verpleegtechnisch.items.filter(i => i.isOverdue).length} achterstallig`
-                                    : `${ct.verpleegtechnisch.items.length} gepland`
-                                  }
-                                </span>
-                              </div>
-                            )}
-                            {ct.wondzorg.items.length > 0 && (
-                              <div className="flex items-center justify-between">
-                                <span className="flex items-center gap-1.5 text-muted-foreground">
-                                  <AlertTriangle className="h-3.5 w-3.5" /> Wondzorg
-                                </span>
-                                <span className={ct.wondzorg.items.some(i => i.isOverdue) ? "text-red-600 font-medium" : "text-amber-600"}>
-                                  {ct.wondzorg.items.length} zorgmoment{ct.wondzorg.items.length !== 1 ? "en" : ""}
-                                </span>
-                              </div>
-                            )}
-                            <div className="flex items-center justify-between">
-                              <span className="flex items-center gap-1.5 text-muted-foreground">
-                                <FileText className="h-3.5 w-3.5" /> Rapportage
-                              </span>
-                              <span className={ct.rapportage.count > 0 ? "text-green-600" : "text-amber-600"}>
-                                {ct.rapportage.count > 0 ? `${ct.rapportage.count} geschreven` : "Geen rapport"}
-                              </span>
+                            <div className="min-w-0">
+                              <span className="text-sm font-medium">{client.clientName}</span>
+                              <p className="text-xs text-muted-foreground">
+                                {client.shiftTypeName} {client.startTime} - {client.endTime}
+                              </p>
                             </div>
-                          </div>
-
-                          <div className="mt-3 pt-2 border-t">
-                            {ct.summary.status === "all_done" && (
-                              <span className="text-xs font-medium text-green-600 flex items-center gap-1">
-                                <CheckCircle2 className="h-3.5 w-3.5" /> Alles afgerond
-                              </span>
+                          </Link>
+                          <div className="flex items-center gap-3 text-xs flex-shrink-0">
+                            {!client.hasReport && (
+                              <Link href={`/dashboard/reports/new?client=${client.clientId}&date=${day.date}`} className="no-underline" onClick={(e) => e.stopPropagation()}>
+                                <span className="flex items-center gap-1 text-red-600 font-medium hover:underline cursor-pointer">
+                                  <FileText className="h-3.5 w-3.5" /> Geen rapport
+                                </span>
+                              </Link>
                             )}
-                            {ct.summary.status === "pending" && (
-                              <span className="text-xs font-medium text-amber-600 flex items-center gap-1">
-                                <Clock className="h-3.5 w-3.5" /> {ct.summary.pending} taken open
-                              </span>
-                            )}
-                            {ct.summary.status === "overdue" && (
-                              <span className="text-xs font-medium text-red-600 flex items-center gap-1">
-                                <AlertTriangle className="h-3.5 w-3.5" /> {ct.summary.overdue} achterstallig
-                              </span>
+                            {client.pendingMedications > 0 && (
+                              <Link href={`/dashboard/medicatie?date=${client.medicationDate || day.date}`} className="no-underline" onClick={(e) => e.stopPropagation()}>
+                                <span className="flex items-center gap-1 text-amber-600 font-medium hover:underline cursor-pointer">
+                                  <Pill className="h-3.5 w-3.5" /> {client.pendingMedications} medicatie open
+                                </span>
+                              </Link>
                             )}
                           </div>
-                        </CardContent>
-                      </Card>
-                    </Link>
-                  )
-                })}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </CardContent>

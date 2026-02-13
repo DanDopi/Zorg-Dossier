@@ -1,9 +1,10 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { useClient } from "@/lib/ClientContext"
 import Link from "next/link"
 import {
@@ -18,6 +19,8 @@ import {
   UtensilsCrossed,
   ChevronRight,
   CalendarOff,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react"
 
 interface MedicatieItem {
@@ -146,19 +149,82 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
   const [error, setError] = useState(false)
   const { setSelectedClient } = useClient()
   const router = useRouter()
+  const searchParams = useSearchParams()
+
+  function formatLocalDate(date: Date): string {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, "0")
+    const d = String(date.getDate()).padStart(2, "0")
+    return `${y}-${m}-${d}`
+  }
+
+  function parseLocalDate(dateStr: string): Date {
+    const [y, m, d] = dateStr.split("-").map(Number)
+    return new Date(y, m - 1, d)
+  }
+
+  const todayStr = formatLocalDate(new Date())
+  const dateParam = searchParams.get("date")
+  const initialDate = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : todayStr
+  const [selectedDate, setSelectedDate] = useState<string>(initialDate)
+  const isSelectedToday = selectedDate === todayStr
+  const [openDays, setOpenDays] = useState<string[]>([])
+
+  function changeDate(days: number) {
+    const current = parseLocalDate(selectedDate)
+    current.setDate(current.getDate() + days)
+    setSelectedDate(formatLocalDate(current))
+  }
+
+  function goToToday() {
+    setSelectedDate(todayStr)
+  }
+
+  async function fetchOpenDays() {
+    try {
+      const response = await fetch("/api/caregiver/missed-tasks")
+      if (response.ok) {
+        const result = await response.json()
+        const dates: string[] = (result.missedDays || [])
+          .map((d: { date: string }) => d.date)
+          .sort()
+        setOpenDays(dates)
+      }
+    } catch {
+      // Silently fail - open day navigation is supplementary
+    }
+  }
+
+  function goToPreviousOpenDay() {
+    const prev = openDays.filter(d => d < selectedDate)
+    if (prev.length > 0) setSelectedDate(prev[prev.length - 1])
+  }
+
+  function goToNextOpenDay() {
+    const next = openDays.filter(d => d > selectedDate)
+    if (next.length > 0) setSelectedDate(next[0])
+  }
+
+  const hasPreviousOpenDay = openDays.some(d => d < selectedDate)
+  const hasNextOpenDay = openDays.some(d => d > selectedDate)
+
+  useEffect(() => {
+    fetchOpenDays()
+  }, [])
 
   useEffect(() => {
     fetchDailyTasks()
-  }, [])
+  }, [selectedDate])
 
   async function fetchDailyTasks() {
     try {
       setIsLoading(true)
       setError(false)
-      const response = await fetch("/api/caregiver/daily-tasks")
+      const response = await fetch(`/api/caregiver/daily-tasks?date=${selectedDate}`)
       if (response.ok) {
         const result = await response.json()
         setData(result)
+        fetchOpenDays()
       } else {
         setError(true)
       }
@@ -174,13 +240,81 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
     router.push(path)
   }
 
+  const selectedDateLabel = isSelectedToday
+    ? "vandaag"
+    : parseLocalDate(selectedDate).toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" })
+
+  const dateNav = (
+    <Card>
+      <CardContent className="py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {openDays.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={goToPreviousOpenDay}
+                disabled={!hasPreviousOpenDay}
+                className="text-amber-700 border-amber-300 hover:bg-amber-50"
+                title="Vorige dag met openstaande taken"
+              >
+                <ChevronsLeft className="h-4 w-4 mr-1" />
+                Vorige Open Dag
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => changeDate(-1)}>
+              ← Vorige Dag
+            </Button>
+          </div>
+          <div className="flex items-center gap-4">
+            {openDays.length > 0 && (
+              <span className="text-xs text-amber-600 font-medium hidden md:inline">
+                {openDays.length} dag{openDays.length !== 1 ? "en" : ""} open
+              </span>
+            )}
+            <Input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="w-auto"
+            />
+            {!isSelectedToday && (
+              <Button variant="outline" onClick={goToToday}>
+                Naar Vandaag
+              </Button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => changeDate(1)}>
+              Volgende Dag →
+            </Button>
+            {openDays.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={goToNextOpenDay}
+                disabled={!hasNextOpenDay}
+                className="text-amber-700 border-amber-300 hover:bg-amber-50"
+                title="Volgende dag met openstaande taken"
+              >
+                Volgende Open Dag
+                <ChevronsRight className="h-4 w-4 ml-1" />
+              </Button>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+
   if (isLoading) {
     return (
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Mijn Taken</h1>
-          <p className="text-muted-foreground mt-2">Uw taken voor vandaag</p>
+          <p className="text-muted-foreground mt-2">Uw taken voor {selectedDateLabel}</p>
         </div>
+        {dateNav}
         <Card>
           <CardContent className="py-12 text-center">
             <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
@@ -196,8 +330,9 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Mijn Taken</h1>
-          <p className="text-muted-foreground mt-2">Uw taken voor vandaag</p>
+          <p className="text-muted-foreground mt-2">Uw taken voor {selectedDateLabel}</p>
         </div>
+        {dateNav}
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground">Er is een fout opgetreden bij het laden van uw taken</p>
@@ -213,14 +348,17 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Mijn Taken</h1>
-          <p className="text-muted-foreground mt-2">Uw taken voor vandaag</p>
+          <p className="text-muted-foreground mt-2">Uw taken voor {selectedDateLabel}</p>
         </div>
+        {dateNav}
         <Card>
           <CardContent className="py-12 text-center">
             <CalendarOff className="h-12 w-12 mx-auto text-gray-300 mb-4" />
-            <p className="text-lg text-muted-foreground">Geen diensten vandaag</p>
+            <p className="text-lg text-muted-foreground">Geen diensten op {selectedDateLabel}</p>
             <p className="text-sm text-muted-foreground mt-1">
-              U heeft vandaag geen diensten ingepland.
+              {isSelectedToday
+                ? "U heeft vandaag geen diensten ingepland."
+                : "U had geen diensten op deze dag."}
             </p>
             <Link href="/dashboard/mijn-rooster">
               <Button variant="outline" className="mt-4">Bekijk Mijn Rooster</Button>
@@ -239,23 +377,44 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
       <div>
         <h1 className="text-3xl font-bold">Mijn Taken</h1>
         <p className="text-muted-foreground mt-2">
-          Uw taken voor vandaag &mdash; {formatDateDutch(data.date)}
+          Uw taken voor {isSelectedToday ? "vandaag" : formatDateDutch(data.date)} &mdash; {formatDateDutch(data.date)}
         </p>
       </div>
 
-      {/* Global Summary Bar */}
+      {/* Global Summary */}
       <Card>
-        <CardContent className="py-4">
-          <div className="flex items-center justify-center gap-6 text-sm">
-            <span className="font-medium">{gs.totalTasks} taken totaal</span>
-            <span className="text-green-600">{gs.completed} afgerond</span>
-            <span className="text-amber-600">{gs.pending} open</span>
-            {gs.overdue > 0 && (
-              <span className="text-red-600 font-semibold">{gs.overdue} achterstallig</span>
-            )}
+        <CardHeader>
+          <CardTitle>Overzicht {parseLocalDate(selectedDate).toLocaleDateString("nl-NL", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric"
+          })}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-4 gap-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold">{gs.totalTasks}</div>
+              <div className="text-sm text-muted-foreground">Totaal</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-green-600">{gs.completed}</div>
+              <div className="text-sm text-muted-foreground">Afgerond</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-amber-600">{gs.pending}</div>
+              <div className="text-sm text-muted-foreground">Open</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-red-600">{gs.overdue}</div>
+              <div className="text-sm text-muted-foreground">Achterstallig</div>
+            </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* Date Navigation */}
+      {dateNav}
 
       {/* Per-client sections */}
       {data.clients.map((ct) => {
@@ -329,9 +488,9 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
                     ))}
                   </div>
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
-                    className="mt-1 text-muted-foreground"
+                    className="mt-1 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
                     onClick={() => navigateToPage(ct.client.id, ct.client.name, "/dashboard/medicatie")}
                   >
                     Ga naar Medicatie <ChevronRight className="h-3.5 w-3.5 ml-1" />
@@ -363,12 +522,12 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
                     ))}
                   </div>
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
-                    className="mt-1 text-muted-foreground"
-                    onClick={() => navigateToPage(ct.client.id, ct.client.name, "/dashboard/voeding")}
+                    className="mt-1 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                    onClick={() => navigateToPage(ct.client.id, ct.client.name, "/dashboard/voeding?tab=tube-feeding")}
                   >
-                    Ga naar Voeding <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                    Ga naar Sondevoeding <ChevronRight className="h-3.5 w-3.5 ml-1" />
                   </Button>
                 </section>
               )}
@@ -409,9 +568,9 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
                     ))}
                   </div>
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
-                    className="mt-1 text-muted-foreground"
+                    className="mt-1 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
                     onClick={() => navigateToPage(ct.client.id, ct.client.name, "/dashboard/verpleegtechnisch")}
                   >
                     Ga naar Verpleegtechnisch <ChevronRight className="h-3.5 w-3.5 ml-1" />
@@ -454,9 +613,9 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
                     ))}
                   </div>
                   <Button
-                    variant="ghost"
+                    variant="outline"
                     size="sm"
-                    className="mt-1 text-muted-foreground"
+                    className="mt-1 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
                     onClick={() => navigateToPage(ct.client.id, ct.client.name, "/dashboard/wondzorg")}
                   >
                     Ga naar Wondzorg <ChevronRight className="h-3.5 w-3.5 ml-1" />
@@ -480,9 +639,9 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
                   <span>Vochtinname: <strong>{ct.io.fluid.count}</strong> ({ct.io.fluid.volume}ml)</span>
                 </div>
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
-                  className="mt-1 text-muted-foreground"
+                  className="mt-1 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
                   onClick={() => navigateToPage(ct.client.id, ct.client.name, "/dashboard/io-registratie")}
                 >
                   Ga naar I&O Registratie <ChevronRight className="h-3.5 w-3.5 ml-1" />
@@ -515,9 +674,9 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
                   ))}
                 </div>
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
-                  className="mt-1 text-muted-foreground"
+                  className="mt-1 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
                   onClick={() => navigateToPage(ct.client.id, ct.client.name, "/dashboard/voeding")}
                 >
                   Ga naar Voeding <ChevronRight className="h-3.5 w-3.5 ml-1" />
@@ -534,17 +693,17 @@ export default function MijnTakenClient({ caregiverId }: MijnTakenClientProps) {
                 </div>
                 <div className={`py-1.5 px-3 rounded-lg text-sm ${ct.rapportage.count > 0 ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"}`}>
                   {ct.rapportage.count > 0
-                    ? `${ct.rapportage.count} rapport${ct.rapportage.count !== 1 ? "en" : ""} geschreven vandaag`
-                    : "Geen rapport geschreven vandaag"
+                    ? `${ct.rapportage.count} rapport${ct.rapportage.count !== 1 ? "en" : ""} geschreven`
+                    : "Geen rapport geschreven"
                   }
                 </div>
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="sm"
-                  className="mt-1 text-muted-foreground"
-                  onClick={() => navigateToPage(ct.client.id, ct.client.name, "/dashboard/reports/new")}
+                  className="mt-1 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                  onClick={() => navigateToPage(ct.client.id, ct.client.name, "/dashboard/rapporteren")}
                 >
-                  Nieuw Rapport <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                  Ga naar Rapportages <ChevronRight className="h-3.5 w-3.5 ml-1" />
                 </Button>
               </section>
             </CardContent>

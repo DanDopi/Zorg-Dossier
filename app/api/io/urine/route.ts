@@ -168,6 +168,40 @@ export async function POST(request: Request) {
       )
     }
 
+    // Check: no future date registration
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const recordDateParsed = new Date(recordDate)
+    const recordDateOnly = new Date(recordDateParsed.getFullYear(), recordDateParsed.getMonth(), recordDateParsed.getDate())
+
+    if (recordDateOnly > today) {
+      return NextResponse.json(
+        { error: "Registratie voor toekomstige dagen is niet toegestaan" },
+        { status: 400 }
+      )
+    }
+
+    // Check: caregiver must have a shift on this date for this client
+    const startOfRecordDay = new Date(recordDateOnly)
+    const endOfRecordDay = new Date(recordDateOnly)
+    endOfRecordDay.setHours(23, 59, 59, 999)
+
+    const shiftCount = await prisma.shift.count({
+      where: {
+        caregiverId: user.caregiverProfile.id,
+        clientId,
+        date: { gte: startOfRecordDay, lte: endOfRecordDay },
+        status: { in: ["FILLED", "COMPLETED"] },
+      },
+    })
+
+    if (shiftCount === 0) {
+      return NextResponse.json(
+        { error: "U heeft geen dienst op deze dag voor deze cliënt" },
+        { status: 403 }
+      )
+    }
+
     const record = await prisma.urineRecord.create({
       data: {
         clientId,
@@ -193,6 +227,90 @@ export async function POST(request: Request) {
     return NextResponse.json(record)
   } catch (error) {
     console.error("Create urine record error:", error)
+    return NextResponse.json(
+      { error: "Er is een fout opgetreden" },
+      { status: 500 }
+    )
+  }
+}
+
+// PUT - Update urine record (only by the caregiver who created it)
+export async function PUT(request: Request) {
+  try {
+    const session = await auth()
+
+    if (!session?.user) {
+      return NextResponse.json(
+        { error: "Niet geautoriseerd" },
+        { status: 401 }
+      )
+    }
+
+    const body = await request.json()
+    const { id, recordTime, volume, notes } = body
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "Record ID vereist" },
+        { status: 400 }
+      )
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      include: {
+        caregiverProfile: true,
+      },
+    })
+
+    if (!user) {
+      return NextResponse.json({ error: "Gebruiker niet gevonden" }, { status: 404 })
+    }
+
+    const record = await prisma.urineRecord.findUnique({
+      where: { id },
+    })
+
+    if (!record) {
+      return NextResponse.json({ error: "Record niet gevonden" }, { status: 404 })
+    }
+
+    // Only the caregiver who created the record (or admin) can edit
+    if (user.role === "CAREGIVER") {
+      if (!user.caregiverProfile || user.caregiverProfile.id !== record.caregiverId) {
+        return NextResponse.json(
+          { error: "U kunt alleen uw eigen registraties bewerken" },
+          { status: 403 }
+        )
+      }
+    } else if (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN") {
+      return NextResponse.json({ error: "Geen toegang" }, { status: 403 })
+    }
+
+    const updateData: { recordTime?: Date; volume?: number; notes?: string | null } = {}
+    if (recordTime) updateData.recordTime = new Date(recordTime)
+    if (volume !== undefined) updateData.volume = parseInt(volume)
+    if (notes !== undefined) updateData.notes = notes || null
+
+    const updated = await prisma.urineRecord.update({
+      where: { id },
+      data: updateData,
+      include: {
+        caregiver: {
+          include: {
+            user: {
+              select: {
+                email: true,
+              },
+            },
+          },
+        },
+      },
+    })
+
+    return NextResponse.json(updated)
+  } catch (error) {
+    console.error("Update urine record error:", error)
     return NextResponse.json(
       { error: "Er is een fout opgetreden" },
       { status: 500 }

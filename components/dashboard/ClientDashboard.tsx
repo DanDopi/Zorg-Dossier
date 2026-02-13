@@ -231,7 +231,7 @@ export default function ClientDashboard({ user }: ClientDashboardProps) {
                         </p>
                       )}
                     </div>
-                    <Link href="/dashboard/rooster">
+                    <Link href={`/dashboard/rooster?date=${correction.date}`}>
                       <Button size="sm" variant="outline" className="border-orange-400 text-orange-800 hover:bg-orange-100">
                         Bekijken
                       </Button>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { ChevronsLeft, ChevronsRight } from "lucide-react"
 import Link from "next/link"
 import { useClient } from "@/lib/ClientContext"
 
@@ -62,29 +63,32 @@ interface RapporterenClientProps {
 
 export default function RapporterenClient({ user }: RapporterenClientProps) {
   const { selectedClient } = useClient()
-  const [reports, setReports] = useState<CareReport[]>([])
+  const [allReports, setAllReports] = useState<CareReport[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [missingReportsCount, setMissingReportsCount] = useState<number>(0)
+  const [openDays, setOpenDays] = useState<string[]>([])
+  const [selectedDate, setSelectedDate] = useState(
+    new Date().toISOString().split("T")[0]
+  )
 
   const isClient = user.role === "CLIENT"
   const isCaregiver = user.role === "CAREGIVER"
 
   useEffect(() => {
-    // For clients, load immediately
     if (isClient) {
       fetchReports()
       fetchMissingReports()
-    }
-    // For caregivers, only load if a client is selected
-    else if (isCaregiver && selectedClient) {
+    } else if (isCaregiver && selectedClient) {
       fetchReports()
       fetchMissingReports()
+      fetchOpenDays()
     }
   }, [selectedClient])
 
   async function fetchReports() {
     try {
+      setIsLoading(true)
       const response = await fetch("/api/reports")
 
       if (!response.ok) {
@@ -92,9 +96,9 @@ export default function RapporterenClient({ user }: RapporterenClientProps) {
       }
 
       const data = await response.json()
-      setReports(data.reports || [])
+      setAllReports(data.reports || [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Kon rapporten niet laden')
+      setError(err instanceof Error ? err.message : "Kon rapporten niet laden")
     } finally {
       setIsLoading(false)
     }
@@ -102,7 +106,6 @@ export default function RapporterenClient({ user }: RapporterenClientProps) {
 
   async function fetchMissingReports() {
     try {
-      // For caregivers, include clientId in the request
       const params = new URLSearchParams()
       if (isCaregiver && selectedClient) {
         params.set("clientId", selectedClient.id)
@@ -119,213 +122,350 @@ export default function RapporterenClient({ user }: RapporterenClientProps) {
     }
   }
 
-  // Group reports by date
-  function groupReportsByDate(reports: CareReport[]) {
-    const grouped: { [key: string]: CareReport[] } = {}
-
-    reports.forEach(report => {
-      const dateKey = new Date(report.reportDate).toLocaleDateString('nl-NL', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      })
-
-      if (!grouped[dateKey]) {
-        grouped[dateKey] = []
-      }
-      grouped[dateKey].push(report)
+  // Filter reports for selected date
+  function getReportsForDate(): CareReport[] {
+    return allReports.filter((report) => {
+      const reportDate = new Date(report.reportDate)
+      const [year, month, day] = selectedDate.split("-").map(Number)
+      return (
+        reportDate.getFullYear() === year &&
+        reportDate.getMonth() === month - 1 &&
+        reportDate.getDate() === day
+      )
     })
-
-    return grouped
   }
 
+  function changeDate(days: number) {
+    const currentDate = new Date(selectedDate)
+    currentDate.setDate(currentDate.getDate() + days)
+    setSelectedDate(currentDate.toISOString().split("T")[0])
+  }
+
+  function goToToday() {
+    setSelectedDate(new Date().toISOString().split("T")[0])
+  }
+
+  async function fetchOpenDays() {
+    if (!isCaregiver) return
+    try {
+      const response = await fetch("/api/caregiver/missed-tasks")
+      if (response.ok) {
+        const result = await response.json()
+        const dates: string[] = (result.missedDays || [])
+          .map((d: { date: string }) => d.date)
+          .sort()
+        setOpenDays(dates)
+      }
+    } catch {
+      // Silently fail - open day navigation is supplementary
+    }
+  }
+
+  function goToPreviousOpenDay() {
+    const prev = openDays.filter((d) => d < selectedDate)
+    if (prev.length > 0) setSelectedDate(prev[prev.length - 1])
+  }
+
+  function goToNextOpenDay() {
+    const next = openDays.filter((d) => d > selectedDate)
+    if (next.length > 0) setSelectedDate(next[0])
+  }
+
+  const hasPreviousOpenDay = openDays.some((d) => d < selectedDate)
+  const hasNextOpenDay = openDays.some((d) => d > selectedDate)
+
+  const isToday = selectedDate === new Date().toISOString().split("T")[0]
+  const dayReports = getReportsForDate()
+
+  // Formatted date for overview header
+  const formattedDate = new Date(selectedDate + "T12:00:00").toLocaleDateString(
+    "nl-NL",
+    {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }
+  )
+
+  // Count unique caregivers for this day
+  const uniqueCaregivers = new Set(dayReports.map((r) => r.caregiverId)).size
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="space-y-6">
-        {/* Welcome Section */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-3xl font-bold text-gray-900">
-              Zorgrapportages
-            </h2>
-            <p className="text-muted-foreground mt-1">
-              {isClient
-                ? "Bekijk alle rapportages van uw zorgverleners"
-                : "Bekijk en beheer al uw zorgrapportages"}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            {(isClient || (isCaregiver && selectedClient)) && (
-              <Link href="/dashboard/reports/missing">
-                <Button variant="outline" className={missingReportsCount > 0 ? "bg-orange-50 border-orange-200 text-orange-700" : ""}>
-                  Ontbrekende Rapporten
-                  {missingReportsCount > 0 && (
-                    <span className="ml-2 bg-orange-600 text-white rounded-full px-2 py-0.5 text-xs">
-                      {missingReportsCount}
-                    </span>
-                  )}
-                </Button>
-              </Link>
-            )}
-            <Link href="/dashboard/reports">
-              <Button variant="outline">Overzicht alle Rapportage&apos;s</Button>
-            </Link>
-            {isCaregiver && (
-              <Link href="/dashboard/reports/new">
-                <Button className="bg-blue-600 hover:bg-orange-500 text-white">
-                  Maak een nieuw rapport
-                </Button>
-              </Link>
-            )}
-          </div>
-        </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h2 className="text-3xl font-bold text-gray-900">Zorgrapportages</h2>
+        <p className="text-muted-foreground mt-1">
+          {isClient
+            ? "Bekijk alle rapportages van uw zorgverleners"
+            : "Dagelijkse zorgrapportages en overzicht"}
+        </p>
+      </div>
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-md text-sm">
-            {error}
-          </div>
-        )}
-
-        {/* Quick Actions */}
-        <div className="grid md:grid-cols-2 gap-4">
-          <Card className="hover:shadow-md transition-shadow">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Rapportages</p>
-                  <p className="text-2xl font-bold text-blue-600">{reports.length}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
+      {/* Action Buttons */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
           {(isClient || (isCaregiver && selectedClient)) && (
             <Link href="/dashboard/reports/missing">
-              <Card className={`hover:shadow-md transition-shadow cursor-pointer ${
-                missingReportsCount > 0 ? 'border-orange-200 bg-orange-50' : ''
-              }`}>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                      missingReportsCount > 0 ? 'bg-orange-100' : 'bg-gray-100'
-                    }`}>
-                      <svg className={`w-5 h-5 ${
-                        missingReportsCount > 0 ? 'text-orange-600' : 'text-gray-600'
-                      }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Ontbrekend</p>
-                      <p className={`text-2xl font-bold ${
-                        missingReportsCount > 0 ? 'text-orange-600' : 'text-gray-600'
-                      }`}>
-                        {missingReportsCount}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <Button
+                variant="outline"
+                className={
+                  missingReportsCount > 0
+                    ? "bg-orange-50 border-orange-200 text-orange-700"
+                    : ""
+                }
+              >
+                Ontbrekende Rapporten
+                {missingReportsCount > 0 && (
+                  <span className="ml-2 bg-orange-600 text-white rounded-full px-2 py-0.5 text-xs">
+                    {missingReportsCount}
+                  </span>
+                )}
+              </Button>
             </Link>
           )}
+          <Link href="/dashboard/reports">
+            <Button variant="outline">
+              Overzicht alle Rapportage&apos;s
+            </Button>
+          </Link>
         </div>
-
-        {/* Reports List */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-2xl">Rapportages</CardTitle>
-            <CardDescription>
-              {isClient
-                ? "Rapportages van uw zorgverleners"
-                : "Uw dagelijkse zorgrapportages"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="max-h-[480px] overflow-y-scroll">
-            {isLoading ? (
-              <div className="text-center py-8">
-                <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
-              </div>
-            ) : reports.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <p>Nog geen rapportages beschikbaar</p>
-                {!isClient && (
-                  <p className="text-sm mt-2">Maak uw eerste rapport aan</p>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {Object.entries(groupReportsByDate(reports)).map(([dateKey, dateReports]) => (
-                  <div key={dateKey} className="space-y-3">
-                    {/* Date Header/Separator */}
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 h-px bg-gray-300"></div>
-                      <h3 className="text-sm font-semibold text-gray-600 px-3 py-1 bg-gray-100 rounded-full">
-                        {dateKey}
-                      </h3>
-                      <div className="flex-1 h-px bg-gray-300"></div>
-                    </div>
-
-                    {/* Reports for this date */}
-                    <div className="space-y-3">
-                      {dateReports.map((report) => (
-                        <Link key={report.id} href={`/dashboard/reports/${report.id}`}>
-                          <Card className="border-l-4 border-l-blue-500 hover:shadow-md transition-shadow cursor-pointer">
-                            <CardContent className="p-4">
-                              <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <h4 className="font-semibold text-lg">
-                                      {isClient
-                                        ? report.caregiver.name
-                                        : report.client.name}
-                                    </h4>
-                                  </div>
-
-                                  {isClient && (
-                                    <p className="text-sm text-blue-600 mb-1">
-                                      Door: {report.caregiver.name}
-                                    </p>
-                                  )}
-
-                                  <p className="text-sm text-gray-700 line-clamp-2 mb-1">
-                                    {report.content}
-                                  </p>
-
-                                  <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                                    {report.images && report.images.length > 0 && (
-                                      <span className="flex items-center gap-1">
-                                        📷 {report.images.length}
-                                      </span>
-                                    )}
-                                    <span>
-                                      {new Date(report.createdAt).toLocaleDateString('nl-NL')}
-                                    </span>
-                                  </div>
-                                </div>
-                                <svg className="w-5 h-5 text-gray-400 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                </svg>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {isCaregiver && (
+          <Link href="/dashboard/reports/new">
+            <Button className="bg-blue-600 hover:bg-orange-500 text-white">
+              Maak een nieuw rapport
+            </Button>
+          </Link>
+        )}
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-md text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Overview Card */}
+      <Card>
+        <CardContent className="p-4">
+          <h3 className="font-semibold text-lg mb-3">
+            Overzicht {formattedDate}
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+            <div>
+              <p className="text-2xl font-bold text-blue-600">
+                {dayReports.length}
+              </p>
+              <p className="text-sm text-muted-foreground">Rapportages</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-green-600">
+                {uniqueCaregivers}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {isClient ? "Zorgverleners" : "Medewerkers"}
+              </p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-purple-600">
+                {dayReports.reduce(
+                  (sum, r) => sum + (r.images?.length || 0),
+                  0
+                )}
+              </p>
+              <p className="text-sm text-muted-foreground">Afbeeldingen</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-600">
+                {allReports.length}
+              </p>
+              <p className="text-sm text-muted-foreground">Totaal</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Date Navigation */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {isCaregiver && openDays.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={goToPreviousOpenDay}
+                  disabled={!hasPreviousOpenDay}
+                  className="text-amber-700 border-amber-300 hover:bg-amber-50"
+                  title="Vorige dag met ontbrekende rapporten"
+                >
+                  <ChevronsLeft className="h-4 w-4 mr-1" />
+                  Vorige Open Dag
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => changeDate(-1)}
+              >
+                &larr; Vorige Dag
+              </Button>
+            </div>
+            <div className="flex items-center gap-3">
+              {isCaregiver && openDays.length > 0 && (
+                <span className="text-xs text-amber-600 font-medium hidden md:inline">
+                  {openDays.length} dag{openDays.length !== 1 ? "en" : ""} open
+                </span>
+              )}
+              <input
+                type="date"
+                title="Selecteer datum"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="border rounded-md px-3 py-1.5 text-sm"
+              />
+              {!isToday && (
+                <Button variant="outline" size="sm" onClick={goToToday}>
+                  Vandaag
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => changeDate(1)}
+              >
+                Volgende Dag &rarr;
+              </Button>
+              {isCaregiver && openDays.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={goToNextOpenDay}
+                  disabled={!hasNextOpenDay}
+                  className="text-amber-700 border-amber-300 hover:bg-amber-50"
+                  title="Volgende dag met ontbrekende rapporten"
+                >
+                  Volgende Open Dag
+                  <ChevronsRight className="h-4 w-4 ml-1" />
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Reports List for Selected Day */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-2xl">Rapportages</CardTitle>
+          <CardDescription>
+            {isClient
+              ? "Rapportages van uw zorgverleners voor deze dag"
+              : "Zorgrapportages voor deze dag"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="text-center py-8">
+              <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto"></div>
+            </div>
+          ) : dayReports.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <svg
+                className="w-16 h-16 mx-auto mb-4 text-gray-300"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+              <p>Geen rapportages voor deze dag</p>
+              {isCaregiver && (
+                <p className="text-sm mt-2">
+                  <Link
+                    href="/dashboard/reports/new"
+                    className="text-blue-600 hover:underline"
+                  >
+                    Maak een rapport aan
+                  </Link>
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {dayReports.map((report) => (
+                <Link
+                  key={report.id}
+                  href={`/dashboard/reports/${report.id}`}
+                >
+                  <Card className="border-l-4 border-l-blue-500 hover:shadow-md transition-shadow cursor-pointer">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h4 className="font-semibold text-lg">
+                              {isClient
+                                ? report.caregiver.name
+                                : report.client.name}
+                            </h4>
+                          </div>
+
+                          {isClient && (
+                            <p className="text-sm text-blue-600 mb-1">
+                              Door: {report.caregiver.name}
+                            </p>
+                          )}
+
+                          <p className="text-sm text-gray-700 line-clamp-2 mb-1">
+                            {report.content}
+                          </p>
+
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                            {report.images && report.images.length > 0 && (
+                              <span className="flex items-center gap-1">
+                                📷 {report.images.length}
+                              </span>
+                            )}
+                            <span>
+                              {new Date(
+                                report.createdAt
+                              ).toLocaleTimeString("nl-NL", {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          </div>
+                        </div>
+                        <svg
+                          className="w-5 h-5 text-gray-400 ml-2"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 5l7 7-7 7"
+                          />
+                        </svg>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

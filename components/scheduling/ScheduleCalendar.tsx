@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
+import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ShiftCard } from "./ShiftCard"
@@ -50,27 +51,40 @@ interface Shift {
   }
 }
 
-interface ScheduleCalendarProps {
+interface ScheduleCalendarInnerProps {
   clientId?: string
   caregiverId?: string
   isReadOnly?: boolean
   onShiftClick?: (shift: Shift) => void
+  onDateChange?: (date: Date) => void
+  initialDateFromUrl?: string | null
 }
 
-export default function ScheduleCalendar({
+function ScheduleCalendarInner({
   clientId,
   caregiverId,
   isReadOnly = false,
   onShiftClick,
-}: ScheduleCalendarProps) {
+  onDateChange,
+  initialDateFromUrl,
+}: ScheduleCalendarInnerProps) {
+  // Initialize with date from URL if provided, otherwise use today's date
+  const initialDate = initialDateFromUrl ? new Date(initialDateFromUrl) : new Date()
+  // Ensure valid date, fallback to today if invalid
+  const validInitialDate = isNaN(initialDate.getTime()) ? new Date() : initialDate
+  
   const [view, setView] = useState<"week" | "month">("month")
-  const [currentDate, setCurrentDate] = useState(new Date())
+  const [currentDate, setCurrentDate] = useState(validInitialDate)
   const [shifts, setShifts] = useState<Shift[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     fetchShifts()
   }, [currentDate, view, clientId, caregiverId])
+
+  useEffect(() => {
+    onDateChange?.(currentDate)
+  }, [currentDate])
 
   const fetchShifts = async () => {
     setIsLoading(true)
@@ -378,5 +392,50 @@ export default function ScheduleCalendar({
         </div>
       </div>
     </div>
+  )
+}
+
+interface ScheduleCalendarProps {
+  clientId?: string
+  caregiverId?: string
+  isReadOnly?: boolean
+  onShiftClick?: (shift: Shift) => void
+  onDateChange?: (date: Date) => void
+}
+
+function ScheduleCalendarWithUrlParams({
+  clientId,
+  caregiverId,
+  isReadOnly = false,
+  onShiftClick,
+  onDateChange,
+}: ScheduleCalendarProps) {
+  const searchParams = useSearchParams()
+  const dateParam = searchParams.get("date")
+  
+  return (
+    <ScheduleCalendarInner
+      clientId={clientId}
+      caregiverId={caregiverId}
+      isReadOnly={isReadOnly}
+      onShiftClick={onShiftClick}
+      onDateChange={onDateChange}
+      initialDateFromUrl={dateParam}
+    />
+  )
+}
+
+export default function ScheduleCalendar(props: ScheduleCalendarProps) {
+  return (
+    <Suspense fallback={
+      <Card>
+        <CardContent className="p-12 text-center text-muted-foreground">
+          <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p>Kalender laden...</p>
+        </CardContent>
+      </Card>
+    }>
+      <ScheduleCalendarWithUrlParams {...props} />
+    </Suspense>
   )
 }

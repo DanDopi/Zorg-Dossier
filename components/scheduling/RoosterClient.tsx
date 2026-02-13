@@ -12,6 +12,7 @@ import RoosterOverviewStats from "./RoosterOverviewStats"
 import VacationOverview from "./VacationOverview"
 import Link from "next/link"
 import { Settings, Plus, Repeat } from "lucide-react"
+import PdfDownloadButton from "./pdf/PdfDownloadButton"
 
 interface Caregiver {
   id: string
@@ -95,6 +96,13 @@ export default function RoosterClient({
           </p>
         </div>
         <div className="flex gap-2">
+          {shiftTypes.length > 0 && (
+            <PdfDownloadButton
+              clientId={clientId}
+              shiftTypes={shiftTypes}
+              variant="outline"
+            />
+          )}
           {shiftTypes.length > 0 && (
             <Button onClick={() => setIsCreateDialogOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />

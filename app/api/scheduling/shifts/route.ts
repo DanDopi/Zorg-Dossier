@@ -36,14 +36,22 @@ export async function GET(request: NextRequest) {
     }
 
     // Build where clause based on user role
+    // Parse dates as local time to match how dates are stored in the database
+    // Handle both "YYYY-MM-DD" and full ISO string formats
+    function parseToLocalDate(dateStr: string): Date {
+      const d = new Date(dateStr)
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+    }
+    const startLocal = parseToLocalDate(startDate)
+    const endLocal = parseToLocalDate(endDate)
     const where: {
       date: { gte: Date; lte: Date }
       clientId?: string
       caregiverId?: string
     } = {
       date: {
-        gte: new Date(startDate),
-        lte: new Date(endDate),
+        gte: startLocal,
+        lte: new Date(endLocal.getFullYear(), endLocal.getMonth(), endLocal.getDate(), 23, 59, 59, 999),
       },
     }
 

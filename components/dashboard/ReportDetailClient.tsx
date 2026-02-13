@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
+import { compressImage } from "@/lib/imageCompression"
 
 interface ReportImage {
   id: string
@@ -56,6 +57,7 @@ export default function ReportDetailClient({ reportId }: ReportDetailClientProps
   const [editReportDate, setEditReportDate] = useState("")
   const [newImages, setNewImages] = useState<(File | null)[]>([null, null, null])
   const [deleteExistingImages, setDeleteExistingImages] = useState(false)
+  const [isCompressing, setIsCompressing] = useState(false)
 
   // Image modal state
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
@@ -86,10 +88,25 @@ export default function ReportDetailClient({ reportId }: ReportDetailClientProps
     }
   }
 
-  function handleImageChange(index: number, file: File | null) {
-    const updated = [...newImages]
-    updated[index] = file
-    setNewImages(updated)
+  async function handleImageChange(index: number, file: File | null) {
+    if (!file) {
+      const updated = [...newImages]
+      updated[index] = null
+      setNewImages(updated)
+      return
+    }
+
+    setIsCompressing(true)
+    try {
+      const result = await compressImage(file)
+      const updated = [...newImages]
+      updated[index] = result.file
+      setNewImages(updated)
+    } catch {
+      alert('Kon afbeelding niet verwerken. Probeer een ander bestand.')
+    } finally {
+      setIsCompressing(false)
+    }
   }
 
   function removeNewImage(index: number) {
@@ -192,7 +209,7 @@ export default function ReportDetailClient({ reportId }: ReportDetailClientProps
   const isCaregiver = viewerRole === "CAREGIVER"
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="space-y-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold">Zorgrapport</h1>
@@ -435,8 +452,8 @@ export default function ReportDetailClient({ reportId }: ReportDetailClientProps
 
                   {/* Action Buttons */}
                   <div className="flex gap-3">
-                    <Button onClick={handleSaveEdit} disabled={isSaving} className="flex-1">
-                      {isSaving ? "Opslaan..." : "Wijzigingen Opslaan"}
+                    <Button onClick={handleSaveEdit} disabled={isSaving || isCompressing} className="flex-1">
+                      {isCompressing ? "Afbeelding comprimeren..." : isSaving ? "Opslaan..." : "Wijzigingen Opslaan"}
                     </Button>
                     <Button onClick={handleCancelEdit} variant="outline" className="flex-1" disabled={isSaving}>
                       Annuleren

@@ -44,3 +44,6 @@ prisma/migrations
 
 # Windows special files
 nul
+
+# Private business documents
+/docs/private/

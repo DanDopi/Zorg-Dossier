@@ -111,12 +111,15 @@ model ClientProfile {
 
   // Nutrition (Voeding) records for this client
   mealRecords               MealRecord[]
+  mealSchedules             MealSchedule[]
   tubeFeedingSchedules      TubeFeedingSchedule[]
   tubeFeedingAdministrations TubeFeedingAdministration[]
+  fluidIntakeSchedules      FluidIntakeSchedule[]
 
   // Wound care (Wondzorgplan) records for this client
   woundCarePlans            WoundCarePlan[]
   woundCareReports          WoundCareReport[]
+  woundCareAuthorizations   WoundCareAuthorization[] @relation("WoundCareAuthorizations")
 
   // Family relationships (future feature)
   familyMembers FamilyClientRelationship[]
@@ -172,6 +175,7 @@ model CaregiverProfile {
 
   // Wound care (Wondzorgplan) records created by this caregiver
   woundCareReports          WoundCareReport[]
+  woundCareAuthorizations   WoundCareAuthorization[] @relation("WoundCareAuthorizedCaregivers")
 
   // Scheduling
   shifts        Shift[]
@@ -581,6 +585,62 @@ model TubeFeedingAdministration {
   @@index([administeredAt])
 }
 
+// Meal schedules defined by client (expected meals)
+model MealSchedule {
+  id              String   @id @default(cuid())
+
+  clientId        String
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  mealTime        String   // e.g., "08:00"
+  mealType        String   // "breakfast", "lunch", "dinner", "snack"
+  description     String?  @db.Text // Optional expected meal description
+
+  // Recurrence settings
+  recurrenceType  String   @default("daily") // "daily", "weekly", "specific_days", "one_time"
+  daysOfWeek      String?  // JSON array: ["monday", "wednesday", "friday"]
+  startDate       DateTime @default(now())
+  endDate         DateTime?
+
+  isActive        Boolean  @default(true)
+  createdBy       String
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([isActive])
+  @@index([clientId, isActive])
+}
+
+// Fluid intake schedules defined by client (expected fluid intake)
+model FluidIntakeSchedule {
+  id              String   @id @default(cuid())
+
+  clientId        String
+  client          ClientProfile @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  intakeTime      String   // e.g., "08:00"
+  volume          Int      // Volume in ml
+  fluidType       String?  // e.g., "water", "tea", "coffee"
+
+  // Recurrence settings
+  recurrenceType  String   @default("daily") // "daily", "weekly", "specific_days", "one_time"
+  daysOfWeek      String?  // JSON array: ["monday", "wednesday", "friday"]
+  startDate       DateTime @default(now())
+  endDate         DateTime?
+
+  isActive        Boolean  @default(true)
+  createdBy       String
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([isActive])
+  @@index([clientId, isActive])
+}
+
 // ============================================
 // SCHEDULING SYSTEM
 // ============================================
@@ -921,4 +981,18 @@ model NursingProcedureLog {
   @@index([clientId])
   @@index([performedBy])
   @@index([performedAt])
+}
+
+// Wound Care Authorization — clients authorize caregivers to manage their wound care plans
+model WoundCareAuthorization {
+  id            String           @id @default(cuid())
+  clientId      String
+  client        ClientProfile    @relation("WoundCareAuthorizations", fields: [clientId], references: [id], onDelete: Cascade)
+  caregiverId   String
+  caregiver     CaregiverProfile @relation("WoundCareAuthorizedCaregivers", fields: [caregiverId], references: [id], onDelete: Cascade)
+  createdAt     DateTime         @default(now())
+
+  @@unique([clientId, caregiverId])
+  @@index([clientId])
+  @@index([caregiverId])
 }

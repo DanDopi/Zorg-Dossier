@@ -157,6 +157,40 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Check: no future date registration
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const recordDateParsed = new Date(recordDate)
+    const recordDateOnly = new Date(recordDateParsed.getFullYear(), recordDateParsed.getMonth(), recordDateParsed.getDate())
+
+    if (recordDateOnly > today) {
+      return NextResponse.json(
+        { error: "Registratie voor toekomstige dagen is niet toegestaan" },
+        { status: 400 }
+      )
+    }
+
+    // Check: caregiver must have a shift on this date for this client
+    const startOfRecordDay = new Date(recordDateOnly)
+    const endOfRecordDay = new Date(recordDateOnly)
+    endOfRecordDay.setHours(23, 59, 59, 999)
+
+    const shiftCount = await prisma.shift.count({
+      where: {
+        caregiverId: user.caregiverProfile.id,
+        clientId,
+        date: { gte: startOfRecordDay, lte: endOfRecordDay },
+        status: { in: ["FILLED", "COMPLETED"] },
+      },
+    })
+
+    if (shiftCount === 0) {
+      return NextResponse.json(
+        { error: "U heeft geen dienst op deze dag voor deze cliënt" },
+        { status: 403 }
+      )
+    }
+
     // Create meal record
     const parsedDate = new Date(recordDate)
     const [hours, minutes] = recordTime.split(":")

@@ -1,5 +1,6 @@
 "use client"
 
+import React from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -7,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { ImageUpload } from "@/components/ui/ImageUpload"
 
 interface WoundCarePlan {
   id: string
@@ -68,6 +70,197 @@ interface WoundCareReport {
   }
 }
 
+// Read-only detail view for a wound care plan
+function PlanDetailDialog({ plan, open, onClose }: { plan: WoundCarePlan | null; open: boolean; onClose: () => void }) {
+  if (!plan) return null
+
+  const DetailRow = ({ label, value }: { label: string; value?: string | number | null }) => {
+    if (!value && value !== 0) return null
+    return (
+      <dl className="py-2">
+        <dt className="text-sm font-medium text-muted-foreground">{label}</dt>
+        <dd className="mt-1 text-sm whitespace-pre-wrap">{value}</dd>
+      </dl>
+    )
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {plan.location} — {plan.woundType}
+            {!plan.isActive && (
+              <span className="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded-full font-normal">Afgesloten</span>
+            )}
+          </DialogTitle>
+          <DialogDescription>Volledig wondzorgplan</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-6 py-4">
+          {/* Deel 1: Algemene Wondgegevens */}
+          <div>
+            <h3 className="font-semibold text-lg border-b pb-2 mb-2">Algemene Wondgegevens</h3>
+            <div className="grid grid-cols-2 gap-x-6">
+              <DetailRow label="Datum van Ontstaan" value={new Date(plan.dateOfOnset).toLocaleDateString('nl-NL')} />
+              <DetailRow label="Oorzaak" value={plan.cause} />
+              <DetailRow label="Locatie" value={plan.location} />
+              <DetailRow label="Type Wond" value={plan.woundType} />
+              {(plan.length || plan.width || plan.depth) && (
+                <DetailRow label="Afmetingen (L x B x D)" value={`${plan.length || '-'} x ${plan.width || '-'} x ${plan.depth || '-'} cm`} />
+              )}
+            </div>
+            <div className="mt-2">
+              <DetailRow label="Wondranden" value={plan.woundEdges} />
+              <DetailRow label="Wondbodem" value={plan.woundBed} />
+              <DetailRow label="Exsudaat (Wondvocht)" value={plan.exudate} />
+              <DetailRow label="Omliggende Huid" value={plan.surroundingSkin} />
+            </div>
+            {plan.initialPhoto && (
+              <div className="py-2 mt-2">
+                <p className="text-sm font-medium text-muted-foreground mb-2">Initiële Foto</p>
+                <img
+                  src={plan.initialPhoto}
+                  alt="Initiële wondfoto"
+                  className="max-w-sm max-h-64 object-contain border rounded cursor-pointer"
+                  onClick={() => window.open(plan.initialPhoto!, '_blank')}
+                  title="Klik om te vergroten"
+                />
+                {plan.photoDate && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Foto datum: {new Date(plan.photoDate).toLocaleDateString('nl-NL')}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Deel 2: Behandelplan / Wondbeleid */}
+          <div>
+            <h3 className="font-semibold text-lg border-b pb-2 mb-2">Behandelplan / Wondbeleid</h3>
+            <div>
+              <DetailRow label="Doel van de Behandeling" value={plan.treatmentGoal} />
+              <DetailRow label="Wondverzorgingsproducten en Verbandmiddelen" value={plan.products} />
+              <DetailRow label="Frequentie" value={plan.frequency} />
+              <DetailRow label="Reinigingsmethode" value={plan.cleaningMethod} />
+              <DetailRow label="Specifieke Instructies" value={plan.instructions} />
+              <DetailRow label="Uitgevoerd Door" value={plan.performedBy} />
+              <DetailRow label="Evaluatie Planning" value={plan.evaluationSchedule} />
+            </div>
+          </div>
+
+          {/* Meta info */}
+          <div className="text-xs text-muted-foreground border-t pt-3 flex gap-4">
+            <span>Startdatum: {new Date(plan.startDate).toLocaleDateString('nl-NL')}</span>
+            {plan.endDate && <span>Einddatum: {new Date(plan.endDate).toLocaleDateString('nl-NL')}</span>}
+            <span>Aangemaakt: {new Date(plan.createdAt).toLocaleDateString('nl-NL')}</span>
+          </div>
+        </div>
+
+        <div className="flex justify-end">
+          <Button variant="outline" onClick={onClose}>Sluiten</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Reusable plan card
+function PlanCard({ plan, onView, onEdit, onClose, onReopen, canManage }: {
+  plan: WoundCarePlan
+  onView: () => void
+  onEdit: () => void
+  onClose?: () => void
+  onReopen?: () => void
+  canManage: boolean
+}) {
+  return (
+    <Card className={`border-l-4 ${plan.isActive ? 'border-l-rose-500' : 'border-l-gray-400'}`}>
+      <CardContent className="p-6">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 space-y-3">
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-lg">{plan.location} - {plan.woundType}</h3>
+              {!plan.isActive && (
+                <span className="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded-full">Afgesloten</span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+              <div>
+                <span className="font-medium">Ontstaan:</span> {new Date(plan.dateOfOnset).toLocaleDateString('nl-NL')}
+              </div>
+              <div>
+                <span className="font-medium">Oorzaak:</span> {plan.cause}
+              </div>
+              {(plan.length || plan.width || plan.depth) && (
+                <div>
+                  <span className="font-medium">Afmetingen:</span> {plan.length || '-'} x {plan.width || '-'} x {plan.depth || '-'} cm
+                </div>
+              )}
+              <div>
+                <span className="font-medium">Frequentie:</span> {plan.frequency}
+              </div>
+            </div>
+
+            <div className="text-sm">
+              <span className="font-medium">Behandeldoel:</span>
+              <p className="text-muted-foreground mt-1">{plan.treatmentGoal}</p>
+            </div>
+
+            <div className="text-sm">
+              <span className="font-medium">Producten:</span>
+              <p className="text-muted-foreground mt-1">{plan.products}</p>
+            </div>
+
+            {plan.initialPhoto && (
+              <div className="pt-2">
+                <img
+                  src={plan.initialPhoto}
+                  alt="Wondfoto"
+                  className="max-w-[120px] max-h-[80px] object-contain border rounded"
+                />
+              </div>
+            )}
+
+            {plan.endDate && !plan.isActive && (
+              <div className="text-xs text-muted-foreground">
+                Afgesloten op: {new Date(plan.endDate).toLocaleDateString('nl-NL')}
+              </div>
+            )}
+
+            {plan.reports && plan.reports.length > 0 && (
+              <div className="text-xs text-muted-foreground pt-2 border-t">
+                Laatste rapportage: {new Date(plan.reports[0].reportDate).toLocaleDateString('nl-NL')} - {plan.reports[0].evaluation}
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={onView}>
+              Bekijken
+            </Button>
+            {canManage && (
+              <Button size="sm" variant="outline" onClick={onEdit}>
+                Bewerken
+              </Button>
+            )}
+            {canManage && plan.isActive && onClose && (
+              <Button variant="destructive" size="sm" onClick={onClose}>
+                Afsluiten
+              </Button>
+            )}
+            {canManage && !plan.isActive && onReopen && (
+              <Button variant="default" size="sm" onClick={onReopen} className="bg-green-600 hover:bg-green-700">
+                Heropenen
+              </Button>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 // Wound Care Plans Tab
 export function WoundCarePlansTab({
   plans,
@@ -80,9 +273,16 @@ export function WoundCarePlansTab({
   handleAddPlan,
   handleUpdatePlan,
   handleClosePlan,
+  handleReopenPlan,
   openEditPlanDialog,
   isClient,
   isCaregiver,
+  canManagePlans,
+  maxFileSize,
+  authorizedCaregivers,
+  availableCaregivers,
+  onAddAuthorization,
+  onRemoveAuthorization,
 }: {
   plans: WoundCarePlan[]
   isPlanDialogOpen: boolean
@@ -94,18 +294,124 @@ export function WoundCarePlansTab({
   handleAddPlan: () => void
   handleUpdatePlan: () => void
   handleClosePlan: (id: string) => void
+  handleReopenPlan: (id: string) => void
   openEditPlanDialog: (plan: WoundCarePlan) => void
   isClient: boolean
   isCaregiver: boolean
+  canManagePlans: boolean
+  maxFileSize: number
+  authorizedCaregivers: Array<{ id: string; caregiverId: string; name: string; color: string | null; createdAt: string }>
+  availableCaregivers: Array<{ caregiverId: string; name: string; color: string | null }>
+  onAddAuthorization: (caregiverId: string) => void
+  onRemoveAuthorization: (caregiverId: string) => void
 }) {
+  const [viewingPlan, setViewingPlan] = React.useState<WoundCarePlan | null>(null)
+  const [selectedCaregiverId, setSelectedCaregiverId] = React.useState<string>("")
+  const activePlans = plans.filter((p) => p.isActive)
+  const closedPlans = plans.filter((p) => !p.isActive)
   return (
+    <div className="space-y-4">
+      {/* Authorization management for clients */}
+      {isClient && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Gemachtigde Zorgverleners</CardTitle>
+            <CardDescription>
+              Gemachtigde zorgverleners kunnen wondzorgplannen aanmaken, bewerken en afsluiten.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {authorizedCaregivers.length === 0 ? (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-blue-800 text-sm mb-4">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>U heeft nog geen zorgverleners gemachtigd. Wondzorgplannen kunnen alleen bekeken worden totdat u een zorgverlener machtigt.</span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2 mb-4">
+                {authorizedCaregivers.map((cg) => (
+                  <div key={cg.caregiverId} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: cg.color || "#6B7280" }}
+                      />
+                      <span className="font-medium">{cg.name}</span>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onRemoveAuthorization(cg.caregiverId)}
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      Verwijderen
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {availableCaregivers.length > 0 && (
+              <div className="flex items-center gap-3">
+                <Select value={selectedCaregiverId} onValueChange={setSelectedCaregiverId}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Selecteer een zorgverlener..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableCaregivers.map((cg) => (
+                      <SelectItem key={cg.caregiverId} value={cg.caregiverId}>
+                        {cg.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  onClick={() => {
+                    if (selectedCaregiverId) {
+                      onAddAuthorization(selectedCaregiverId)
+                      setSelectedCaregiverId("")
+                    }
+                  }}
+                  disabled={!selectedCaregiverId}
+                >
+                  Toevoegen
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Info banner for unauthorized caregiver */}
+      {isCaregiver && !canManagePlans && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-800 text-sm">
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+            <span>U bent niet gemachtigd om wondzorgplannen te beheren voor deze cliënt. De cliënt kan u machtigen via het tabblad Wondzorgplannen.</span>
+          </div>
+        </div>
+      )}
+
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>Wondzorgplannen</CardTitle>
-            <CardDescription>Beheer algemene wondgegevens en behandelplannen</CardDescription>
+            <CardDescription>
+              {isClient
+                ? "Bekijk wondzorgplannen"
+                : canManagePlans
+                  ? "Beheer algemene wondgegevens en behandelplannen"
+                  : "Bekijk algemene wondgegevens en behandelplannen"
+              }
+            </CardDescription>
           </div>
+          {canManagePlans && (
           <Dialog open={isPlanDialogOpen} onOpenChange={(open) => {
             setIsPlanDialogOpen(open)
             if (!open) {
@@ -248,6 +554,13 @@ export function WoundCarePlansTab({
                       rows={2}
                     />
                   </div>
+
+                  <ImageUpload
+                    label="Initiële Foto van de Wond"
+                    value={newPlan.initialPhoto || null}
+                    onChange={(base64) => setNewPlan({ ...newPlan, initialPhoto: base64 || "" })}
+                    maxFileSize={maxFileSize}
+                  />
                 </div>
 
                 {/* Deel 2: Behandelplan / Wondbeleid */}
@@ -339,6 +652,7 @@ export function WoundCarePlansTab({
               </div>
             </DialogContent>
           </Dialog>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -347,78 +661,52 @@ export function WoundCarePlansTab({
             <p>Nog geen wondzorgplannen aangemaakt</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {plans.map((plan) => (
-              <Card key={plan.id} className={`border-l-4 ${plan.isActive ? 'border-l-rose-500' : 'border-l-gray-400'}`}>
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold text-lg">{plan.location} - {plan.woundType}</h3>
-                        {!plan.isActive && (
-                          <span className="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded-full">Afgesloten</span>
-                        )}
-                      </div>
+          <div className="space-y-6">
+            {/* Active plans */}
+            {activePlans.length > 0 && (
+              <div className="space-y-4">
+                {activePlans.map((plan) => (
+                  <PlanCard
+                    key={plan.id}
+                    plan={plan}
+                    onView={() => setViewingPlan(plan)}
+                    onEdit={() => openEditPlanDialog(plan)}
+                    onClose={() => handleClosePlan(plan.id)}
+                    canManage={canManagePlans}
+                  />
+                ))}
+              </div>
+            )}
 
-                      <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                        <div>
-                          <span className="font-medium">Ontstaan:</span> {new Date(plan.dateOfOnset).toLocaleDateString('nl-NL')}
-                        </div>
-                        <div>
-                          <span className="font-medium">Oorzaak:</span> {plan.cause}
-                        </div>
-                        {(plan.length || plan.width || plan.depth) && (
-                          <div>
-                            <span className="font-medium">Afmetingen:</span> {plan.length || '-'} x {plan.width || '-'} x {plan.depth || '-'} cm
-                          </div>
-                        )}
-                        <div>
-                          <span className="font-medium">Frequentie:</span> {plan.frequency}
-                        </div>
-                      </div>
-
-                      <div className="text-sm">
-                        <span className="font-medium">Behandeldoel:</span>
-                        <p className="text-muted-foreground mt-1">{plan.treatmentGoal}</p>
-                      </div>
-
-                      <div className="text-sm">
-                        <span className="font-medium">Producten:</span>
-                        <p className="text-muted-foreground mt-1">{plan.products}</p>
-                      </div>
-
-                      {plan.reports && plan.reports.length > 0 && (
-                        <div className="text-xs text-muted-foreground pt-2 border-t">
-                          Laatste rapportage: {new Date(plan.reports[0].reportDate).toLocaleDateString('nl-NL')} - {plan.reports[0].evaluation}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => openEditPlanDialog(plan)}
-                      >
-                        Bewerken
-                      </Button>
-                      {plan.isActive && (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleClosePlan(plan.id)}
-                        >
-                          Afsluiten
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            {/* Closed plans */}
+            {closedPlans.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="font-semibold text-sm text-muted-foreground border-b pb-2">
+                  Afgesloten Plannen ({closedPlans.length})
+                </h3>
+                {closedPlans.map((plan) => (
+                  <PlanCard
+                    key={plan.id}
+                    plan={plan}
+                    onView={() => setViewingPlan(plan)}
+                    onEdit={() => openEditPlanDialog(plan)}
+                    onReopen={() => handleReopenPlan(plan.id)}
+                    canManage={canManagePlans}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
       </CardContent>
+
+      <PlanDetailDialog
+        plan={viewingPlan}
+        open={viewingPlan !== null}
+        onClose={() => setViewingPlan(null)}
+      />
     </Card>
+    </div>
   )
 }
 
@@ -434,6 +722,7 @@ export function WoundCareReportsTab({
   handleAddReport,
   selectedDate,
   isCaregiver,
+  maxFileSize,
 }: {
   reports: WoundCareReport[]
   woundCarePlans: WoundCarePlan[]
@@ -445,22 +734,17 @@ export function WoundCareReportsTab({
   handleAddReport: () => void
   selectedDate: string
   isCaregiver: boolean
+  maxFileSize: number
 }) {
   const isFutureDate = selectedDate > new Date().toISOString().split("T")[0]
 
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle>Dagelijkse Wondrapportages</CardTitle>
-            <CardDescription>Registreer observaties bij elke wondverzorging</CardDescription>
-          </div>
+        <CardTitle>Dagelijkse Wondrapportages</CardTitle>
+        <CardDescription>Registreer observaties bij elke wondverzorging</CardDescription>
           {isCaregiver && woundCarePlans.length > 0 && (
             <Dialog open={isReportDialogOpen} onOpenChange={setIsReportDialogOpen}>
-              <DialogTrigger asChild>
-                <Button disabled={isFutureDate || !selectedPlanId}>+ Rapportage Toevoegen</Button>
-              </DialogTrigger>
               <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>Nieuwe Wondrapportage</DialogTitle>
@@ -599,6 +883,17 @@ export function WoundCareReportsTab({
                     </div>
                   </div>
 
+                  {/* Foto */}
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-sm border-b pb-2">Foto</h3>
+                    <ImageUpload
+                      label="Wondfoto (optioneel)"
+                      value={newReport.photo || null}
+                      onChange={(base64) => setNewReport({ ...newReport, photo: base64 || "" })}
+                      maxFileSize={maxFileSize}
+                    />
+                  </div>
+
                   {/* Client Reaction */}
                   <div className="space-y-4">
                     <h3 className="font-semibold text-sm border-b pb-2">Reactie Cliënt</h3>
@@ -689,7 +984,6 @@ export function WoundCareReportsTab({
               </DialogContent>
             </Dialog>
           )}
-        </div>
       </CardHeader>
       <CardContent>
         {!selectedPlanId ? (
@@ -757,6 +1051,25 @@ export function WoundCareReportsTab({
                       {report.nextCareDate && (
                         <div>
                           <span className="font-medium">Volgende verzorging:</span> {new Date(report.nextCareDate).toLocaleDateString('nl-NL')}
+                        </div>
+                      )}
+                      {report.photo && (
+                        <div className="pt-2">
+                          <span className="font-medium">Foto:</span>
+                          <div className="mt-1">
+                            <img
+                              src={report.photo}
+                              alt="Wondfoto"
+                              className="max-w-[200px] max-h-[140px] object-contain border rounded cursor-pointer"
+                              onClick={() => window.open(report.photo!, '_blank')}
+                              title="Klik om te vergroten"
+                            />
+                            {report.photoDate && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {new Date(report.photoDate).toLocaleDateString('nl-NL')}
+                              </p>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>

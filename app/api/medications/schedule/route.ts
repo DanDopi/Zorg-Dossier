@@ -104,6 +104,7 @@ export async function GET(request: Request) {
         },
       },
       include: {
+        medication: true,
         caregiver: {
           include: {
             user: {
@@ -189,10 +190,12 @@ export async function GET(request: Request) {
         const adminTime = new Date(admin.scheduledTime)
         const timeStr = `${String(adminTime.getHours()).padStart(2, '0')}:${String(adminTime.getMinutes()).padStart(2, '0')}`
 
-        // Find the medication this administration belongs to
-        const medication = medications.find(m => m.id === admin.medicationId)
+        // Find the medication this administration belongs to (from active meds or from included relation)
+        const medication = medications.find(m => m.id === admin.medicationId) || admin.medication
 
         if (!medication) return null
+
+        const isExtra = medication.frequency === "extra"
 
         return {
           medication: {
@@ -205,7 +208,8 @@ export async function GET(request: Request) {
           scheduledTime: admin.scheduledTime.toISOString(),
           time: timeStr,
           status: admin.wasGiven ? "given" : "skipped",
-          isOrphaned: true,
+          isOrphaned: !isExtra,
+          isExtra,
           administration: {
             id: admin.id,
             administeredAt: admin.administeredAt,

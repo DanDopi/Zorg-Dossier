@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useClient } from "@/lib/ClientContext"
+import { compressImage } from "@/lib/imageCompression"
 
 interface Client {
   client: {
@@ -42,6 +43,7 @@ export default function NewReportClient({ activeClients }: NewReportClientProps)
   const [reportDate, setReportDate] = useState(preselectedDate)
   const [content, setContent] = useState("")
   const [images, setImages] = useState<(File | null)[]>([null, null, null])
+  const [isCompressing, setIsCompressing] = useState(false)
 
   // Update clientId when global context changes (if no URL param)
   useEffect(() => {
@@ -50,10 +52,25 @@ export default function NewReportClient({ activeClients }: NewReportClientProps)
     }
   }, [globalSelectedClient, searchParams])
 
-  function handleImageChange(index: number, file: File | null) {
-    const newImages = [...images]
-    newImages[index] = file
-    setImages(newImages)
+  async function handleImageChange(index: number, file: File | null) {
+    if (!file) {
+      const newImages = [...images]
+      newImages[index] = null
+      setImages(newImages)
+      return
+    }
+
+    setIsCompressing(true)
+    try {
+      const result = await compressImage(file)
+      const newImages = [...images]
+      newImages[index] = result.file
+      setImages(newImages)
+    } catch {
+      alert('Kon afbeelding niet verwerken. Probeer een ander bestand.')
+    } finally {
+      setIsCompressing(false)
+    }
   }
 
   function removeImage(index: number) {
@@ -131,7 +148,7 @@ export default function NewReportClient({ activeClients }: NewReportClientProps)
   const selectedClientName = activeClients.find(c => c.client.id === clientId)?.client.name
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="space-y-6">
       <Card>
           <CardHeader>
             <CardTitle className="text-2xl">Nieuw Zorgrapport</CardTitle>
@@ -249,8 +266,8 @@ export default function NewReportClient({ activeClients }: NewReportClientProps)
 
                 {/* Submit */}
                 <div className="flex gap-3">
-                  <Button type="submit" disabled={isSubmitting} className="flex-1">
-                    {isSubmitting ? "Rapport aanmaken..." : "Rapport Aanmaken"}
+                  <Button type="submit" disabled={isSubmitting || isCompressing} className="flex-1">
+                    {isCompressing ? "Afbeelding comprimeren..." : isSubmitting ? "Rapport aanmaken..." : "Rapport Aanmaken"}
                   </Button>
                   <Button
                     type="button"

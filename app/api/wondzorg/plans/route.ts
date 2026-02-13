@@ -163,13 +163,13 @@ export async function POST(request: Request) {
     let targetClientId = clientId
 
     if (user.role === "CLIENT") {
-      // Clients can create wound care plans for themselves
-      if (!user.clientProfile) {
-        return NextResponse.json({ error: "Geen cliënt profiel" }, { status: 403 })
-      }
-      targetClientId = user.clientProfile.id
+      // Clients cannot create wound care plans
+      return NextResponse.json(
+        { error: "Cliënten kunnen geen wondzorgplannen aanmaken. Machtig een zorgverlener via het tabblad Wondzorgplannen." },
+        { status: 403 }
+      )
     } else if (user.role === "CAREGIVER") {
-      // Caregivers can create wound care plans for their clients
+      // Caregivers can create wound care plans for their clients if authorized
       if (!clientId) {
         return NextResponse.json({ error: "clientId vereist" }, { status: 400 })
       }
@@ -181,6 +181,23 @@ export async function POST(request: Request) {
       if (!hasRelationship) {
         return NextResponse.json(
           { error: "Geen toegang tot deze cliënt" },
+          { status: 403 }
+        )
+      }
+
+      // Check wound care authorization
+      const isAuthorized = await prisma.woundCareAuthorization.findUnique({
+        where: {
+          clientId_caregiverId: {
+            clientId,
+            caregiverId: user.caregiverProfile!.id,
+          },
+        },
+      })
+
+      if (!isAuthorized) {
+        return NextResponse.json(
+          { error: "U bent niet gemachtigd om wondzorgplannen te beheren voor deze cliënt" },
           { status: 403 }
         )
       }
@@ -304,12 +321,11 @@ export async function PUT(request: Request) {
 
     // Check permissions
     if (user.role === "CLIENT") {
-      if (!user.clientProfile || user.clientProfile.id !== woundCarePlan.clientId) {
-        return NextResponse.json(
-          { error: "Geen toegang tot dit wondzorgplan" },
-          { status: 403 }
-        )
-      }
+      // Clients cannot edit wound care plans
+      return NextResponse.json(
+        { error: "Cliënten kunnen geen wondzorgplannen bewerken. Dit wordt gedaan door een gemachtigde zorgverlener." },
+        { status: 403 }
+      )
     } else if (user.role === "CAREGIVER") {
       const hasRelationship = user.caregiverProfile?.clientRelationships.some(
         (rel) => rel.clientId === woundCarePlan.clientId && rel.status === "ACTIVE"
@@ -318,6 +334,23 @@ export async function PUT(request: Request) {
       if (!hasRelationship) {
         return NextResponse.json(
           { error: "Geen toegang tot dit wondzorgplan" },
+          { status: 403 }
+        )
+      }
+
+      // Check wound care authorization
+      const isAuthorized = await prisma.woundCareAuthorization.findUnique({
+        where: {
+          clientId_caregiverId: {
+            clientId: woundCarePlan.clientId,
+            caregiverId: user.caregiverProfile!.id,
+          },
+        },
+      })
+
+      if (!isAuthorized) {
+        return NextResponse.json(
+          { error: "U bent niet gemachtigd om wondzorgplannen te beheren voor deze cliënt" },
           { status: 403 }
         )
       }
@@ -416,12 +449,11 @@ export async function DELETE(request: Request) {
 
     // Check permissions
     if (user.role === "CLIENT") {
-      if (!user.clientProfile || user.clientProfile.id !== woundCarePlan.clientId) {
-        return NextResponse.json(
-          { error: "Geen toegang tot dit wondzorgplan" },
-          { status: 403 }
-        )
-      }
+      // Clients cannot close wound care plans
+      return NextResponse.json(
+        { error: "Cliënten kunnen geen wondzorgplannen afsluiten. Dit wordt gedaan door een gemachtigde zorgverlener." },
+        { status: 403 }
+      )
     } else if (user.role === "CAREGIVER") {
       const hasRelationship = user.caregiverProfile?.clientRelationships.some(
         (rel) => rel.clientId === woundCarePlan.clientId && rel.status === "ACTIVE"
@@ -430,6 +462,23 @@ export async function DELETE(request: Request) {
       if (!hasRelationship) {
         return NextResponse.json(
           { error: "Geen toegang tot dit wondzorgplan" },
+          { status: 403 }
+        )
+      }
+
+      // Check wound care authorization
+      const isAuthorized = await prisma.woundCareAuthorization.findUnique({
+        where: {
+          clientId_caregiverId: {
+            clientId: woundCarePlan.clientId,
+            caregiverId: user.caregiverProfile!.id,
+          },
+        },
+      })
+
+      if (!isAuthorized) {
+        return NextResponse.json(
+          { error: "U bent niet gemachtigd om wondzorgplannen te beheren voor deze cliënt" },
           { status: 403 }
         )
       }

@@ -11,13 +11,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+// Tabs removed - using manual state with styled buttons
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { formatFullDate } from "@/lib/utils/calendar"
 import { Calendar, Clock, FileText, CheckCircle } from "lucide-react"
+import PdfDownloadButton from "./pdf/PdfDownloadButton"
 
 interface Client {
   id: string
@@ -47,6 +48,12 @@ interface Shift {
   }
 }
 
+interface ShiftTypeInfo {
+  id: string
+  name: string
+  color: string
+}
+
 interface MijnRoosterClientProps {
   caregiverId: string
   clients: Client[]
@@ -56,6 +63,7 @@ export default function MijnRoosterClient({
   caregiverId,
   clients,
 }: MijnRoosterClientProps) {
+  const [activeTab, setActiveTab] = useState<"schedule" | "timeoff">("schedule")
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [upcomingShifts, setUpcomingShifts] = useState<Shift[]>([])
@@ -65,10 +73,34 @@ export default function MijnRoosterClient({
   const [isSubmittingCorrection, setIsSubmittingCorrection] = useState(false)
   const [showCorrectionForm, setShowCorrectionForm] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [shiftTypes, setShiftTypes] = useState<ShiftTypeInfo[]>([])
+  const [currentCalendarDate, setCurrentCalendarDate] = useState<Date>(new Date())
 
   useEffect(() => {
     fetchUpcomingShifts()
+    fetchShiftTypes()
   }, [caregiverId, refreshKey])
+
+  const fetchShiftTypes = async () => {
+    try {
+      // Fetch shift types from all clients
+      const allShiftTypes: ShiftTypeInfo[] = []
+      for (const client of clients) {
+        const response = await fetch(`/api/scheduling/shift-types?clientId=${client.id}`)
+        if (response.ok) {
+          const data = await response.json()
+          allShiftTypes.push(...data)
+        }
+      }
+      // Remove duplicates by id
+      const uniqueShiftTypes = Array.from(
+        new Map(allShiftTypes.map((item) => [item.id, item])).values()
+      )
+      setShiftTypes(uniqueShiftTypes)
+    } catch (error) {
+      console.error("Error fetching shift types:", error)
+    }
+  }
 
   useEffect(() => {
     if (selectedShift) {
@@ -159,82 +191,108 @@ export default function MijnRoosterClient({
       {/* Header */}
       <div>
         <h1 className="text-3xl font-bold">Mijn Rooster</h1>
-        <p className="text-muted-foreground mt-2">
+        <p className="text-muted-foreground mt-1">
           Bekijk uw ingeplande diensten
         </p>
       </div>
 
-      {/* Tabs for Schedule and Time-off */}
-      <Tabs defaultValue="schedule" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="schedule">Rooster</TabsTrigger>
-          <TabsTrigger value="timeoff">Verlof & Ziekmeldingen</TabsTrigger>
-        </TabsList>
+      {/* Action Buttons */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            className={activeTab === "schedule" ? "bg-blue-50 border-blue-200 text-blue-700" : ""}
+            onClick={() => setActiveTab("schedule")}
+          >
+            Rooster
+          </Button>
+          <Button
+            variant="outline"
+            className={activeTab === "timeoff" ? "bg-blue-50 border-blue-200 text-blue-700" : ""}
+            onClick={() => setActiveTab("timeoff")}
+          >
+            Verlof & Ziekmeldingen
+          </Button>
+        </div>
+        {clients.length > 0 && shiftTypes.length > 0 && (
+          <PdfDownloadButton
+            clientId={clients[0].id}
+            shiftTypes={shiftTypes}
+            caregiverId={caregiverId}
+            currentDate={currentCalendarDate}
+            variant="outline"
+          />
+        )}
+      </div>
 
-        <TabsContent value="schedule" className="space-y-6">
+      {/* Schedule Tab Content */}
+      {activeTab === "schedule" && (
+        <div className="space-y-6">
           {/* Upcoming Shifts */}
           <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Calendar className="h-5 w-5" />
-            Aankomende Diensten
-          </CardTitle>
-          <CardDescription>Uw diensten voor de komende 7 dagen</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {upcomingShifts.length === 0 ? (
-            <p className="text-muted-foreground">
-              Geen aankomende diensten ingepland
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {upcomingShifts.map((shift) => (
-                <div
-                  key={shift.id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors"
-                  onClick={() => handleShiftClick(shift)}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex flex-col items-center justify-center w-12 h-12 bg-white rounded-lg border">
-                      <div className="text-xs text-muted-foreground">
-                        {shift.date.toLocaleDateString("nl-NL", {
-                          month: "short",
-                        })}
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5" />
+                Aankomende Diensten
+              </CardTitle>
+              <CardDescription>Uw diensten voor de komende 7 dagen</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {upcomingShifts.length === 0 ? (
+                <p className="text-muted-foreground">
+                  Geen aankomende diensten ingepland
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {upcomingShifts.map((shift) => (
+                    <div
+                      key={shift.id}
+                      className="flex items-center justify-between p-3 rounded-lg bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors"
+                      onClick={() => handleShiftClick(shift)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex flex-col items-center justify-center w-12 h-12 bg-white rounded-lg border">
+                          <div className="text-xs text-muted-foreground">
+                            {shift.date.toLocaleDateString("nl-NL", {
+                              month: "short",
+                            })}
+                          </div>
+                          <div className="text-lg font-bold">
+                            {shift.date.getDate()}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="font-semibold">{shift.shiftType.name}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {shift.client?.name || "Onbekend"}
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-lg font-bold">
-                        {shift.date.getDate()}
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Clock className="h-4 w-4" />
+                        {shift.startTime} - {shift.endTime}
                       </div>
                     </div>
-                    <div>
-                      <div className="font-semibold">{shift.shiftType.name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {shift.client?.name || "Onbekend"}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Clock className="h-4 w-4" />
-                    {shift.startTime} - {shift.endTime}
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Calendar */}
           <ScheduleCalendar
             caregiverId={caregiverId}
             isReadOnly
             onShiftClick={handleShiftClick}
+            onDateChange={setCurrentCalendarDate}
           />
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="timeoff">
-          <TimeOffRequest caregiverId={caregiverId} clients={clients} />
-        </TabsContent>
-      </Tabs>
+      {/* Time-off Tab Content */}
+      {activeTab === "timeoff" && (
+        <TimeOffRequest caregiverId={caregiverId} clients={clients} />
+      )}
 
       {/* Shift Detail Modal */}
       {selectedShift && (

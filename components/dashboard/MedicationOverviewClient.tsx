@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { getMaxFileSizeClient } from "@/lib/fileValidation"
+import { compressImage } from "@/lib/imageCompression"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -123,17 +124,8 @@ export default function MedicationOverviewClient({ user }: MedicationOverviewCli
 
   async function handleAddMedication() {
     try {
-      let finalImageUrl = newMedication.imageUrl
-
-      // If user uploaded a file, convert to base64 data URL
-      if (selectedImage) {
-        finalImageUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onloadend = () => resolve(reader.result as string)
-          reader.onerror = reject
-          reader.readAsDataURL(selectedImage)
-        })
-      }
+      // Use compressed base64 from preview, or existing imageUrl
+      const finalImageUrl = imagePreview || newMedication.imageUrl
 
       // Build request payload - only include clientId if it exists
       const payload: any = {
@@ -192,7 +184,7 @@ export default function MedicationOverviewClient({ user }: MedicationOverviewCli
     }
   }
 
-  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (file) {
       // Validate file type
@@ -208,18 +200,17 @@ export default function MedicationOverviewClient({ user }: MedicationOverviewCli
         return
       }
 
-      setSelectedImage(file)
-
-      // Create preview
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string)
+      try {
+        const result = await compressImage(file)
+        setSelectedImage(result.file)
+        setImagePreview(result.base64)
+      } catch {
+        alert('Kon afbeelding niet verwerken. Probeer een ander bestand.')
       }
-      reader.readAsDataURL(file)
     }
   }
 
-  function handleEditImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleEditImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (file) {
       // Validate file type
@@ -235,14 +226,13 @@ export default function MedicationOverviewClient({ user }: MedicationOverviewCli
         return
       }
 
-      setEditSelectedImage(file)
-
-      // Create preview
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setEditImagePreview(reader.result as string)
+      try {
+        const result = await compressImage(file)
+        setEditSelectedImage(result.file)
+        setEditImagePreview(result.base64)
+      } catch {
+        alert('Kon afbeelding niet verwerken. Probeer een ander bestand.')
       }
-      reader.readAsDataURL(file)
     }
   }
 
@@ -290,17 +280,8 @@ export default function MedicationOverviewClient({ user }: MedicationOverviewCli
     if (!editingMedication) return
 
     try {
-      let finalImageUrl = editMedicationForm.imageUrl
-
-      // If user uploaded a new file, convert to base64 data URL
-      if (editSelectedImage) {
-        finalImageUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onloadend = () => resolve(reader.result as string)
-          reader.onerror = reject
-          reader.readAsDataURL(editSelectedImage)
-        })
-      }
+      // Use compressed base64 from edit preview, or existing imageUrl
+      const finalImageUrl = editImagePreview || editMedicationForm.imageUrl
 
       const response = await fetch("/api/medications", {
         method: "PUT",
@@ -536,6 +517,7 @@ export default function MedicationOverviewClient({ user }: MedicationOverviewCli
                         onChange={(e) =>
                           setNewMedication({ ...newMedication, startDate: e.target.value })
                         }
+                        max={`${new Date().getFullYear() + 1}-12-31`}
                       />
                     </div>
 
@@ -548,7 +530,11 @@ export default function MedicationOverviewClient({ user }: MedicationOverviewCli
                         onChange={(e) =>
                           setNewMedication({ ...newMedication, endDate: e.target.value })
                         }
+                        max={`${new Date().getFullYear() + 1}-12-31`}
                       />
+                      <p className="text-xs text-muted-foreground">
+                        Maximum: 31 december {new Date().getFullYear() + 1}
+                      </p>
                     </div>
 
                     <div className="grid gap-2">
@@ -784,6 +770,7 @@ export default function MedicationOverviewClient({ user }: MedicationOverviewCli
                 onChange={(e) =>
                   setEditMedicationForm({ ...editMedicationForm, startDate: e.target.value })
                 }
+                max={`${new Date().getFullYear() + 1}-12-31`}
               />
             </div>
 
@@ -796,7 +783,11 @@ export default function MedicationOverviewClient({ user }: MedicationOverviewCli
                 onChange={(e) =>
                   setEditMedicationForm({ ...editMedicationForm, endDate: e.target.value })
                 }
+                max={`${new Date().getFullYear() + 1}-12-31`}
               />
+              <p className="text-xs text-muted-foreground">
+                Maximum: 31 december {new Date().getFullYear() + 1}
+              </p>
             </div>
 
             <div className="grid gap-2">

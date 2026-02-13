@@ -320,10 +320,13 @@ export default function NursingProceduresClient({ user }: NursingProceduresClien
 
   // Stats
   const overdue = procedures.filter((p) => getDaysUntil(p.nextDueDate) < 0).length
-  const dueSoon = procedures.filter((p) => {
-    const d = getDaysUntil(p.nextDueDate)
-    return d >= 0 && d <= 7
-  }).length
+
+  // Find the next upcoming procedure (closest future due date)
+  const upcomingProcedures = procedures
+    .filter((p) => getDaysUntil(p.nextDueDate) >= 0)
+    .sort((a, b) => getDaysUntil(a.nextDueDate) - getDaysUntil(b.nextDueDate))
+  const nextProcedure = upcomingProcedures[0] || null
+  const nextDaysUntil = nextProcedure ? getDaysUntil(nextProcedure.nextDueDate) : null
 
   if (!isClient && !selectedClient) {
     return (
@@ -383,10 +386,27 @@ export default function NursingProceduresClient({ user }: NursingProceduresClien
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Binnenkort Gepland</CardDescription>
-            <CardTitle className={`text-3xl ${dueSoon > 0 ? "text-amber-600" : "text-muted-foreground"}`}>
-              {dueSoon}
-            </CardTitle>
+            <CardDescription>Eerstvolgende Handeling</CardDescription>
+            {nextProcedure ? (
+              <>
+                <CardTitle className={`text-lg ${nextDaysUntil! <= 7 ? "text-amber-600" : "text-blue-600"}`}>
+                  {nextProcedure.name}
+                </CardTitle>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {nextDaysUntil === 0
+                    ? "Vandaag"
+                    : nextDaysUntil === 1
+                    ? "Morgen"
+                    : `Over ${nextDaysUntil} dagen`}
+                  {" — "}
+                  {formatDateDutch(nextProcedure.nextDueDate)}
+                </p>
+              </>
+            ) : (
+              <CardTitle className="text-lg text-muted-foreground">
+                {procedures.length > 0 ? "Alles achterstallig" : "Geen handelingen"}
+              </CardTitle>
+            )}
           </CardHeader>
         </Card>
       </div>

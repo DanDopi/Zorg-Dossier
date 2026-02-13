@@ -105,8 +105,8 @@ function DashboardLayoutContent({ children, userName, userRole, clients }: Dashb
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-green-50 to-orange-50">
-      {/* Header */}
-      <header className="bg-white border-b shadow-sm">
+      {/* Header - Fixed */}
+      <header className="fixed top-0 left-0 right-0 bg-white border-b shadow-sm z-40">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -172,10 +172,13 @@ function DashboardLayoutContent({ children, userName, userRole, clients }: Dashb
         </div>
       </header>
 
+      {/* Spacer for fixed header */}
+      <div className="h-[73px]" />
+
       <div className="flex">
-        {/* Sidebar - For clients and caregivers */}
+        {/* Sidebar - Fixed */}
         {showSidebar && (
-          <aside className="w-64 bg-white border-r shadow-sm min-h-screen">
+          <aside className="fixed top-[73px] left-0 bottom-0 w-64 bg-white border-r shadow-sm overflow-y-auto z-30">
             <nav className="p-4 space-y-2">
               {menuItems.map((item) => {
                 // Exact match for /dashboard, otherwise check if path starts with item.href
@@ -213,8 +216,8 @@ function DashboardLayoutContent({ children, userName, userRole, clients }: Dashb
           </aside>
         )}
 
-        {/* Main Content */}
-        <main className={`flex-1 ${showSidebar ? "" : "container mx-auto"} px-4 py-8`}>
+        {/* Main Content - offset for fixed sidebar */}
+        <main className={`flex-1 ${showSidebar ? "ml-64" : "container mx-auto"} px-4 py-8`}>
           {children}
         </main>
       </div>

@@ -5,12 +5,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useClient } from "@/lib/ClientContext"
 
 interface DefecationRecord {
   id: string
+  caregiverId: string
   recordDate: string
   recordTime: string
   amount?: string
@@ -26,6 +27,7 @@ interface DefecationRecord {
 
 interface UrineRecord {
   id: string
+  caregiverId: string
   recordDate: string
   recordTime: string
   volume: number
@@ -89,9 +91,32 @@ export default function IORegistratieClient({ user }: IORegistratieClientProps) 
     notes: "",
   })
 
+  // Edit defecation state
+  const [isEditDefecationDialogOpen, setIsEditDefecationDialogOpen] = useState(false)
+  const [editDefecation, setEditDefecation] = useState<{
+    id: string
+    time: string
+    amount: string
+    consistency: string
+    notes: string
+  } | null>(null)
+
+  // Edit urine state
+  const [isEditUrineDialogOpen, setIsEditUrineDialogOpen] = useState(false)
+  const [editUrine, setEditUrine] = useState<{
+    id: string
+    time: string
+    volume: string
+    notes: string
+  } | null>(null)
+
+  // Caregiver shift state
+  const [hasShiftOnDate, setHasShiftOnDate] = useState(false)
+
   const isClient = user.role === "CLIENT"
   const isCaregiver = user.role === "CAREGIVER"
   const isTodayOrPast = selectedDate <= new Date().toISOString().split("T")[0]
+  const canRegister = isCaregiver && isTodayOrPast && hasShiftOnDate
 
   useEffect(() => {
     // For clients, load data immediately
@@ -103,6 +128,39 @@ export default function IORegistratieClient({ user }: IORegistratieClientProps) 
       loadData()
     }
   }, [selectedClient, selectedDate])
+
+  // Fetch caregiver shifts when date changes
+  useEffect(() => {
+    if (!isCaregiver || !selectedClient) {
+      setHasShiftOnDate(false)
+      return
+    }
+
+    async function fetchShifts() {
+      try {
+        const response = await fetch(
+          `/api/scheduling/shifts?clientId=${selectedClient!.id}&startDate=${selectedDate}&endDate=${selectedDate}`
+        )
+
+        if (response.ok) {
+          const shifts = await response.json()
+          const myShifts = (Array.isArray(shifts) ? shifts : []).filter(
+            (s: { caregiverId: string; status: string }) =>
+              s.caregiverId === user.caregiverProfile?.id &&
+              (s.status === "FILLED" || s.status === "COMPLETED")
+          )
+          setHasShiftOnDate(myShifts.length > 0)
+        } else {
+          setHasShiftOnDate(false)
+        }
+      } catch (error) {
+        console.error("Error fetching shifts:", error)
+        setHasShiftOnDate(false)
+      }
+    }
+
+    fetchShifts()
+  }, [selectedDate, isCaregiver, selectedClient, user.caregiverProfile?.id])
 
   async function loadData() {
     setIsLoading(true)
@@ -255,6 +313,108 @@ export default function IORegistratieClient({ user }: IORegistratieClientProps) 
     }
   }
 
+  function openEditDefecation(record: DefecationRecord) {
+    const time = new Date(record.recordTime).toLocaleTimeString("nl-NL", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+    setEditDefecation({
+      id: record.id,
+      time,
+      amount: record.amount || "normal",
+      consistency: record.consistency || "normal",
+      notes: record.notes || "",
+    })
+    setIsEditDefecationDialogOpen(true)
+  }
+
+  async function handleEditDefecation() {
+    if (!editDefecation) return
+
+    try {
+      const [year, month, day] = selectedDate.split("-").map(Number)
+      const [hours, minutes] = editDefecation.time.split(":").map(Number)
+      const recordTime = new Date(year, month - 1, day, hours, minutes)
+
+      const response = await fetch("/api/io/defecation", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editDefecation.id,
+          recordTime: recordTime.toISOString(),
+          amount: editDefecation.amount,
+          consistency: editDefecation.consistency,
+          notes: editDefecation.notes || null,
+        }),
+      })
+
+      if (response.ok) {
+        setIsEditDefecationDialogOpen(false)
+        setEditDefecation(null)
+        loadData()
+      } else {
+        const error = await response.json()
+        alert(error.error || "Fout bij bewerken defecatie")
+      }
+    } catch (error) {
+      console.error("Error editing defecation:", error)
+      alert("Er is een fout opgetreden")
+    }
+  }
+
+  function openEditUrine(record: UrineRecord) {
+    const time = new Date(record.recordTime).toLocaleTimeString("nl-NL", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+    setEditUrine({
+      id: record.id,
+      time,
+      volume: record.volume.toString(),
+      notes: record.notes || "",
+    })
+    setIsEditUrineDialogOpen(true)
+  }
+
+  async function handleEditUrine() {
+    if (!editUrine) return
+
+    try {
+      const [year, month, day] = selectedDate.split("-").map(Number)
+      const [hours, minutes] = editUrine.time.split(":").map(Number)
+      const recordTime = new Date(year, month - 1, day, hours, minutes)
+
+      const response = await fetch("/api/io/urine", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editUrine.id,
+          recordTime: recordTime.toISOString(),
+          volume: parseInt(editUrine.volume),
+          notes: editUrine.notes || null,
+        }),
+      })
+
+      if (response.ok) {
+        setIsEditUrineDialogOpen(false)
+        setEditUrine(null)
+        loadData()
+      } else {
+        const error = await response.json()
+        alert(error.error || "Fout bij bewerken urine")
+      }
+    } catch (error) {
+      console.error("Error editing urine:", error)
+      alert("Er is een fout opgetreden")
+    }
+  }
+
+  function isOwnRecord(caregiverId: string) {
+    return isCaregiver && user.caregiverProfile?.id === caregiverId
+  }
+
   function changeDate(days: number) {
     const currentDate = new Date(selectedDate)
     currentDate.setDate(currentDate.getDate() + days)
@@ -267,26 +427,83 @@ export default function IORegistratieClient({ user }: IORegistratieClientProps) 
 
   if (isLoading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="text-center">Laden...</div>
-      </div>
+      <div className="text-center py-8">Laden...</div>
     )
   }
 
   const isToday = selectedDate === new Date().toISOString().split("T")[0]
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="space-y-6">
+    <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">In- en outputlijst</h1>
-            <p className="text-muted-foreground mt-1">
-              Registreer en volg defecatie, urineproductie en vochtinname
-            </p>
-          </div>
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">In- en outputlijst</h1>
+          <p className="text-muted-foreground mt-1">
+            Registreer en volg defecatie, urineproductie en vochtinname
+          </p>
         </div>
+
+        {/* Action Buttons */}
+        {isCaregiver && (
+          <div className="flex items-center justify-end gap-3">
+            <Button
+              disabled={!canRegister}
+              onClick={() => setIsDefecationDialogOpen(true)}
+              title={
+                !isTodayOrPast
+                  ? "Kan geen toekomstige registraties maken"
+                  : !hasShiftOnDate
+                  ? "U heeft geen dienst op deze dag"
+                  : undefined
+              }
+            >
+              + Registreer Defecatie
+            </Button>
+            <Button
+              disabled={!canRegister}
+              onClick={() => setIsUrineDialogOpen(true)}
+              title={
+                !isTodayOrPast
+                  ? "Kan geen toekomstige registraties maken"
+                  : !hasShiftOnDate
+                  ? "U heeft geen dienst op deze dag"
+                  : undefined
+              }
+            >
+              + Registreer Urine
+            </Button>
+          </div>
+        )}
+
+        {/* Daily Summary */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Overzicht {new Date(selectedDate + "T12:00:00").toLocaleDateString("nl-NL", {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric"
+            })}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">{defecationRecords.length}</div>
+                <div className="text-sm text-muted-foreground">Defecaties</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-amber-600">{urineRecords.length}</div>
+                <div className="text-sm text-muted-foreground">Urine metingen</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-amber-600">
+                  {urineRecords.reduce((sum, r) => sum + r.volume, 0)} ml
+                </div>
+                <div className="text-sm text-muted-foreground">Totaal urine volume</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Date Navigation */}
         <Card>
@@ -315,132 +532,40 @@ export default function IORegistratieClient({ user }: IORegistratieClientProps) 
           </CardContent>
         </Card>
 
+        {/* Warning banners for caregivers */}
+        {isCaregiver && !isTodayOrPast && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <p className="text-sm text-amber-800 font-medium">
+              U kunt geen registraties aanmaken voor een toekomstige datum.
+            </p>
+          </div>
+        )}
+        {isCaregiver && isTodayOrPast && !hasShiftOnDate && selectedClient && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <p className="text-sm text-amber-800 font-medium">
+              U kunt geen registraties aanmaken omdat u geen dienst heeft op deze dag.
+            </p>
+          </div>
+        )}
+
         {/* Defecation Section */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Defecatielijst</CardTitle>
-                <CardDescription>
-                  Overzicht van defecaties voor {new Date(selectedDate).toLocaleDateString("nl-NL", {
-                    weekday: "long",
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric"
-                  })}
-                </CardDescription>
-              </div>
-              {isCaregiver && isTodayOrPast && (
-                <Dialog open={isDefecationDialogOpen} onOpenChange={setIsDefecationDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button>
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                      </svg>
-                      Registreer Defecatie
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Nieuwe Defecatie Registreren</DialogTitle>
-                      <DialogDescription>
-                        Voeg een defecatie toe voor {selectedDate}
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="grid gap-4 py-4">
-                      <div className="grid gap-2">
-                        <Label htmlFor="time">Tijdstip *</Label>
-                        <Input
-                          id="time"
-                          type="time"
-                          value={newDefecation.time}
-                          onChange={(e) =>
-                            setNewDefecation({ ...newDefecation, time: e.target.value })
-                          }
-                        />
-                      </div>
-
-                      <div className="grid gap-2">
-                        <Label htmlFor="amount">Hoeveelheid *</Label>
-                        <Select
-                          value={newDefecation.amount}
-                          onValueChange={(value) =>
-                            setNewDefecation({ ...newDefecation, amount: value })
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Geen</SelectItem>
-                            <SelectItem value="little">Weinig</SelectItem>
-                            <SelectItem value="normal">Normaal</SelectItem>
-                            <SelectItem value="alot">Veel</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="grid gap-2">
-                        <Label htmlFor="consistency">Consistentie</Label>
-                        <Select
-                          value={newDefecation.consistency}
-                          onValueChange={(value) =>
-                            setNewDefecation({ ...newDefecation, consistency: value })
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="normal">Normaal</SelectItem>
-                            <SelectItem value="diarree">Diarree</SelectItem>
-                            <SelectItem value="obstipatie">Obstipatie</SelectItem>
-                            <SelectItem value="hard">Hard</SelectItem>
-                            <SelectItem value="zacht">Zacht</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="grid gap-2">
-                        <Label htmlFor="notes">Notities</Label>
-                        <Input
-                          id="notes"
-                          value={newDefecation.notes}
-                          onChange={(e) =>
-                            setNewDefecation({ ...newDefecation, notes: e.target.value })
-                          }
-                          placeholder="Eventuele opmerkingen"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" onClick={() => setIsDefecationDialogOpen(false)}>
-                        Annuleren
-                      </Button>
-                      <Button onClick={handleAddDefecation}>Toevoegen</Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              )}
+            <div>
+              <CardTitle>Defecatielijst</CardTitle>
+              <CardDescription>
+                Overzicht van defecaties voor {new Date(selectedDate).toLocaleDateString("nl-NL", {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric"
+                })}
+              </CardDescription>
             </div>
           </CardHeader>
           <CardContent>
             {defecationRecords.length > 0 ? (
               <div className="space-y-3">
-                {/* Summary */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Totaal aantal defecaties</p>
-                      <p className="text-2xl font-bold text-blue-600">{defecationRecords.length}</p>
-                    </div>
-                    <svg className="w-12 h-12 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Records List */}
                 {defecationRecords.map((record) => (
                   <div
                     key={record.id}
@@ -483,14 +608,24 @@ export default function IORegistratieClient({ user }: IORegistratieClientProps) 
                         </div>
                       </div>
                     </div>
-                    {isCaregiver && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDeleteDefecation(record.id)}
-                      >
-                        Verwijder
-                      </Button>
+                    {isOwnRecord(record.caregiverId) && (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEditDefecation(record)}
+                        >
+                          Bewerk
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteDefecation(record.id)}
+                          className="text-red-600 hover:text-red-700 hover:border-red-300"
+                        >
+                          Verwijder
+                        </Button>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -506,121 +641,21 @@ export default function IORegistratieClient({ user }: IORegistratieClientProps) 
         {/* Urine Section */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Urine-opbrengst</CardTitle>
-                <CardDescription>
-                  Urineproductie voor {new Date(selectedDate).toLocaleDateString("nl-NL", {
-                    weekday: "long",
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric"
-                  })}
-                </CardDescription>
-              </div>
-              {isCaregiver && isTodayOrPast && (
-                <Dialog open={isUrineDialogOpen} onOpenChange={setIsUrineDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button>
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                      </svg>
-                      Registreer Urine
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Nieuwe Urine Registreren</DialogTitle>
-                      <DialogDescription>
-                        Voeg urineproductie toe voor {selectedDate}
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="grid gap-4 py-4">
-                      <div className="grid gap-2">
-                        <Label htmlFor="urine-time">Tijdstip *</Label>
-                        <Input
-                          id="urine-time"
-                          type="time"
-                          value={newUrine.time}
-                          onChange={(e) =>
-                            setNewUrine({ ...newUrine, time: e.target.value })
-                          }
-                        />
-                      </div>
-
-                      <div className="grid gap-2">
-                        <Label htmlFor="volume">Volume (ml) *</Label>
-                        <Input
-                          id="volume"
-                          type="number"
-                          value={newUrine.volume}
-                          onChange={(e) =>
-                            setNewUrine({ ...newUrine, volume: e.target.value })
-                          }
-                          placeholder="Bijv. 250"
-                          min="0"
-                        />
-                        <div className="flex gap-2 flex-wrap">
-                          {[100, 250, 500, 750, 1000].map((vol) => (
-                            <Button
-                              key={vol}
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setNewUrine({ ...newUrine, volume: vol.toString() })}
-                            >
-                              {vol} ml
-                            </Button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="grid gap-2">
-                        <Label htmlFor="urine-notes">Notities</Label>
-                        <Input
-                          id="urine-notes"
-                          value={newUrine.notes}
-                          onChange={(e) =>
-                            setNewUrine({ ...newUrine, notes: e.target.value })
-                          }
-                          placeholder="Eventuele opmerkingen"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" onClick={() => setIsUrineDialogOpen(false)}>
-                        Annuleren
-                      </Button>
-                      <Button onClick={handleAddUrine}>Toevoegen</Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              )}
+            <div>
+              <CardTitle>Urine-opbrengst</CardTitle>
+              <CardDescription>
+                Urineproductie voor {new Date(selectedDate).toLocaleDateString("nl-NL", {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric"
+                })}
+              </CardDescription>
             </div>
           </CardHeader>
           <CardContent>
             {urineRecords.length > 0 ? (
               <div className="space-y-3">
-                {/* Summary */}
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Totaal volume</p>
-                      <p className="text-2xl font-bold text-amber-600">
-                        {urineRecords.reduce((sum, r) => sum + r.volume, 0)} ml
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm text-muted-foreground">Aantal metingen</p>
-                      <p className="text-2xl font-bold text-amber-600">{urineRecords.length}</p>
-                    </div>
-                    <svg className="w-12 h-12 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Records List */}
                 {urineRecords.map((record) => (
                   <div
                     key={record.id}
@@ -648,14 +683,24 @@ export default function IORegistratieClient({ user }: IORegistratieClientProps) 
                         </div>
                       </div>
                     </div>
-                    {isCaregiver && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDeleteUrine(record.id)}
-                      >
-                        Verwijder
-                      </Button>
+                    {isOwnRecord(record.caregiverId) && (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEditUrine(record)}
+                        >
+                          Bewerk
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteUrine(record.id)}
+                          className="text-red-600 hover:text-red-700 hover:border-red-300"
+                        >
+                          Verwijder
+                        </Button>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -667,7 +712,319 @@ export default function IORegistratieClient({ user }: IORegistratieClientProps) 
             )}
           </CardContent>
         </Card>
-      </div>
+
+      {/* Defecation Dialog */}
+      <Dialog open={isDefecationDialogOpen} onOpenChange={setIsDefecationDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nieuwe Defecatie Registreren</DialogTitle>
+            <DialogDescription>
+              Voeg een defecatie toe voor {selectedDate}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="time">Tijdstip *</Label>
+              <Input
+                id="time"
+                type="time"
+                value={newDefecation.time}
+                onChange={(e) =>
+                  setNewDefecation({ ...newDefecation, time: e.target.value })
+                }
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="amount">Hoeveelheid *</Label>
+              <Select
+                value={newDefecation.amount}
+                onValueChange={(value) =>
+                  setNewDefecation({ ...newDefecation, amount: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Geen</SelectItem>
+                  <SelectItem value="little">Weinig</SelectItem>
+                  <SelectItem value="normal">Normaal</SelectItem>
+                  <SelectItem value="alot">Veel</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="consistency">Consistentie</Label>
+              <Select
+                value={newDefecation.consistency}
+                onValueChange={(value) =>
+                  setNewDefecation({ ...newDefecation, consistency: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="normal">Normaal</SelectItem>
+                  <SelectItem value="diarree">Diarree</SelectItem>
+                  <SelectItem value="obstipatie">Obstipatie</SelectItem>
+                  <SelectItem value="hard">Hard</SelectItem>
+                  <SelectItem value="zacht">Zacht</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="notes">Notities</Label>
+              <Input
+                id="notes"
+                value={newDefecation.notes}
+                onChange={(e) =>
+                  setNewDefecation({ ...newDefecation, notes: e.target.value })
+                }
+                placeholder="Eventuele opmerkingen"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsDefecationDialogOpen(false)}>
+              Annuleren
+            </Button>
+            <Button onClick={handleAddDefecation}>Toevoegen</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Urine Dialog */}
+      <Dialog open={isUrineDialogOpen} onOpenChange={setIsUrineDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Nieuwe Urine Registreren</DialogTitle>
+            <DialogDescription>
+              Voeg urineproductie toe voor {selectedDate}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="urine-time">Tijdstip *</Label>
+              <Input
+                id="urine-time"
+                type="time"
+                value={newUrine.time}
+                onChange={(e) =>
+                  setNewUrine({ ...newUrine, time: e.target.value })
+                }
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="volume">Volume (ml) *</Label>
+              <Input
+                id="volume"
+                type="number"
+                value={newUrine.volume}
+                onChange={(e) =>
+                  setNewUrine({ ...newUrine, volume: e.target.value })
+                }
+                placeholder="Bijv. 250"
+                min="0"
+              />
+              <div className="flex gap-2 flex-wrap">
+                {[100, 250, 500, 750, 1000].map((vol) => (
+                  <Button
+                    key={vol}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setNewUrine({ ...newUrine, volume: vol.toString() })}
+                  >
+                    {vol} ml
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="urine-notes">Notities</Label>
+              <Input
+                id="urine-notes"
+                value={newUrine.notes}
+                onChange={(e) =>
+                  setNewUrine({ ...newUrine, notes: e.target.value })
+                }
+                placeholder="Eventuele opmerkingen"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsUrineDialogOpen(false)}>
+              Annuleren
+            </Button>
+            <Button onClick={handleAddUrine}>Toevoegen</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Defecation Dialog */}
+      <Dialog open={isEditDefecationDialogOpen} onOpenChange={setIsEditDefecationDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Defecatie Bewerken</DialogTitle>
+            <DialogDescription>
+              Pas de registratie aan
+            </DialogDescription>
+          </DialogHeader>
+          {editDefecation && (
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-def-time">Tijdstip *</Label>
+                <Input
+                  id="edit-def-time"
+                  type="time"
+                  value={editDefecation.time}
+                  onChange={(e) =>
+                    setEditDefecation({ ...editDefecation, time: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Hoeveelheid *</Label>
+                <Select
+                  value={editDefecation.amount}
+                  onValueChange={(value) =>
+                    setEditDefecation({ ...editDefecation, amount: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Geen</SelectItem>
+                    <SelectItem value="little">Weinig</SelectItem>
+                    <SelectItem value="normal">Normaal</SelectItem>
+                    <SelectItem value="alot">Veel</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Consistentie</Label>
+                <Select
+                  value={editDefecation.consistency}
+                  onValueChange={(value) =>
+                    setEditDefecation({ ...editDefecation, consistency: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="normal">Normaal</SelectItem>
+                    <SelectItem value="diarree">Diarree</SelectItem>
+                    <SelectItem value="obstipatie">Obstipatie</SelectItem>
+                    <SelectItem value="hard">Hard</SelectItem>
+                    <SelectItem value="zacht">Zacht</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="edit-def-notes">Notities</Label>
+                <Input
+                  id="edit-def-notes"
+                  value={editDefecation.notes}
+                  onChange={(e) =>
+                    setEditDefecation({ ...editDefecation, notes: e.target.value })
+                  }
+                  placeholder="Eventuele opmerkingen"
+                />
+              </div>
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsEditDefecationDialogOpen(false)}>
+              Annuleren
+            </Button>
+            <Button onClick={handleEditDefecation}>Opslaan</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Urine Dialog */}
+      <Dialog open={isEditUrineDialogOpen} onOpenChange={setIsEditUrineDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Urine Bewerken</DialogTitle>
+            <DialogDescription>
+              Pas de registratie aan
+            </DialogDescription>
+          </DialogHeader>
+          {editUrine && (
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-urine-time">Tijdstip *</Label>
+                <Input
+                  id="edit-urine-time"
+                  type="time"
+                  value={editUrine.time}
+                  onChange={(e) =>
+                    setEditUrine({ ...editUrine, time: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="edit-urine-volume">Volume (ml) *</Label>
+                <Input
+                  id="edit-urine-volume"
+                  type="number"
+                  value={editUrine.volume}
+                  onChange={(e) =>
+                    setEditUrine({ ...editUrine, volume: e.target.value })
+                  }
+                  placeholder="Bijv. 250"
+                  min="0"
+                />
+                <div className="flex gap-2 flex-wrap">
+                  {[100, 250, 500, 750, 1000].map((vol) => (
+                    <Button
+                      key={vol}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setEditUrine({ ...editUrine, volume: vol.toString() })}
+                    >
+                      {vol} ml
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="edit-urine-notes">Notities</Label>
+                <Input
+                  id="edit-urine-notes"
+                  value={editUrine.notes}
+                  onChange={(e) =>
+                    setEditUrine({ ...editUrine, notes: e.target.value })
+                  }
+                  placeholder="Eventuele opmerkingen"
+                />
+              </div>
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsEditUrineDialogOpen(false)}>
+              Annuleren
+            </Button>
+            <Button onClick={handleEditUrine}>Opslaan</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </div>
   )
 }

@@ -154,7 +154,7 @@ export default function ReportsListClient({ userRole }: ReportsListClientProps) 
   const filteredReports = getFilteredReports()
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="space-y-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold">Zorgrapportages</h1>
@@ -248,7 +248,7 @@ export default function ReportsListClient({ userRole }: ReportsListClientProps) 
       </div>
 
       <Card>
-        <CardContent className="pt-6 max-h-[600px] overflow-y-scroll">
+        <CardContent className="pt-6 max-h-[calc(100vh-320px)] overflow-y-scroll">
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-md text-sm mb-4">
               {error}

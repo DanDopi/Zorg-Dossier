@@ -71,6 +71,40 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Check: no future date registration
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const scheduledDate = new Date(scheduledTime)
+    const scheduledDateOnly = new Date(scheduledDate.getFullYear(), scheduledDate.getMonth(), scheduledDate.getDate())
+
+    if (scheduledDateOnly > today) {
+      return NextResponse.json(
+        { error: "Registratie voor toekomstige dagen is niet toegestaan" },
+        { status: 400 }
+      )
+    }
+
+    // Check: caregiver must have a shift on this date for this client
+    const startOfRecordDay = new Date(scheduledDateOnly)
+    const endOfRecordDay = new Date(scheduledDateOnly)
+    endOfRecordDay.setHours(23, 59, 59, 999)
+
+    const shiftCount = await prisma.shift.count({
+      where: {
+        caregiverId: user.caregiverProfile.id,
+        clientId,
+        date: { gte: startOfRecordDay, lte: endOfRecordDay },
+        status: { in: ["FILLED", "COMPLETED"] },
+      },
+    })
+
+    if (shiftCount === 0) {
+      return NextResponse.json(
+        { error: "U heeft geen dienst op deze dag voor deze cliënt" },
+        { status: 403 }
+      )
+    }
+
     // Verify schedule exists
     const schedule = await prisma.tubeFeedingSchedule.findUnique({
       where: { id: scheduleId },

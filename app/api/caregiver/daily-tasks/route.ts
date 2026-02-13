@@ -189,8 +189,61 @@ export async function GET(request: Request) {
           }),
         ])
 
-        // Build medication schedule (reuse logic from medications/schedule route)
-        const medItems = buildMedicationSchedule(medications, medAdministrations, targetDate)
+        // Build medication schedule filtered by shift time range
+        const shiftStartMin = timeToMinutes(firstShift.startTime)
+        const shiftEndMin = timeToMinutes(firstShift.endTime)
+        const isOvernightShift = shiftEndMin < shiftStartMin
+
+        let medItems: ReturnType<typeof buildMedicationSchedule>
+
+        if (isOvernightShift) {
+          // For overnight shifts (e.g. 23:00-10:00), we need:
+          // 1. Evening meds on target date (time >= startTime, e.g. >= 23:00)
+          // 2. Morning meds on NEXT day (time <= endTime, e.g. <= 10:00)
+          const nextDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1)
+          const nextStartOfDay = new Date(nextDay.getFullYear(), nextDay.getMonth(), nextDay.getDate(), 0, 0, 0, 0)
+          const nextEndOfDay = new Date(nextDay.getFullYear(), nextDay.getMonth(), nextDay.getDate(), 23, 59, 59, 999)
+
+          const [nextDayMedications, nextDayAdministrations] = await Promise.all([
+            prisma.medication.findMany({
+              where: {
+                clientId,
+                isActive: true,
+                startDate: { lte: nextEndOfDay },
+                OR: [{ endDate: null }, { endDate: { gte: nextStartOfDay } }],
+              },
+            }),
+            prisma.medicationAdministration.findMany({
+              where: {
+                clientId,
+                scheduledTime: { gte: nextStartOfDay, lte: nextEndOfDay },
+              },
+              include: {
+                caregiver: { select: { name: true } },
+              },
+            }),
+          ])
+
+          // Evening part: meds on shift date with time >= shift start
+          const eveningMeds = buildMedicationSchedule(
+            medications, medAdministrations, targetDate,
+            { startTime: firstShift.startTime, endTime: firstShift.endTime, dayPart: "evening" }
+          )
+
+          // Morning part: meds on next day with time <= shift end
+          const morningMeds = buildMedicationSchedule(
+            nextDayMedications, nextDayAdministrations, nextDay,
+            { startTime: firstShift.startTime, endTime: firstShift.endTime, dayPart: "morning" }
+          )
+
+          medItems = [...eveningMeds, ...morningMeds]
+        } else {
+          // Normal shift: only meds within shift time range
+          medItems = buildMedicationSchedule(
+            medications, medAdministrations, targetDate,
+            { startTime: firstShift.startTime, endTime: firstShift.endTime, dayPart: "full" }
+          )
+        }
 
         // Build tube feeding schedule (reuse recurrence logic)
         const dayOfWeek = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][targetDate.getDay()]
@@ -367,16 +420,37 @@ function formatDate(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
 }
 
+// Helper: convert "HH:MM" to minutes since midnight
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number)
+  return h * 60 + m
+}
+
 // Reused medication schedule logic from /api/medications/schedule
+// shiftFilter: filters medications to only those within the caregiver's shift time range
 function buildMedicationSchedule(
   medications: any[],
   administrations: any[],
-  targetDate: Date
+  targetDate: Date,
+  shiftFilter?: { startTime: string; endTime: string; dayPart: "evening" | "morning" | "full" }
 ) {
   const schedule = medications.flatMap((medication) => {
     try {
       const times = JSON.parse(medication.times) as string[]
-      return times.map((time: string) => {
+      return times.filter((time: string) => {
+        if (!shiftFilter) return true
+        const medMin = timeToMinutes(time)
+        const startMin = timeToMinutes(shiftFilter.startTime)
+        const endMin = timeToMinutes(shiftFilter.endTime)
+
+        if (shiftFilter.dayPart === "evening") {
+          return medMin >= startMin
+        } else if (shiftFilter.dayPart === "morning") {
+          return medMin <= endMin
+        } else {
+          return medMin >= startMin && medMin <= endMin
+        }
+      }).map((time: string) => {
         const [hours, minutes] = time.split(":")
         const scheduledTime = new Date(targetDate)
         scheduledTime.setHours(parseInt(hours), parseInt(minutes), 0, 0)

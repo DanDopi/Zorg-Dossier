@@ -7,8 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { ChevronsLeft, ChevronsRight } from "lucide-react"
 import { useClient } from "@/lib/ClientContext"
 
 // Interface for caregiver shifts
@@ -33,6 +35,7 @@ interface ScheduleItem {
   time: string
   status: "pending" | "given" | "skipped"
   isOrphaned?: boolean
+  isExtra?: boolean
   administration?: {
     id: string
     administeredAt: string
@@ -117,6 +120,7 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
   const [selectedDate, setSelectedDate] = useState<string>(preselectedDate)
   const [isLoading, setIsLoading] = useState(true)
   const [missingMedicationsCount, setMissingMedicationsCount] = useState<number>(0)
+  const [openDays, setOpenDays] = useState<string[]>([])
 
   // Administer medication state
   const [administerDialogOpen, setAdministerDialogOpen] = useState(false)
@@ -124,6 +128,16 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
   const [administrationNotes, setAdministrationNotes] = useState("")
   const [wasGiven, setWasGiven] = useState(true)
   const [skipReason, setSkipReason] = useState("")
+
+  // Extra medication dialog state
+  const [extraMedDialogOpen, setExtraMedDialogOpen] = useState(false)
+  const [extraMed, setExtraMed] = useState({
+    name: "",
+    dosage: "",
+    unit: "mg",
+    time: new Date().toTimeString().slice(0, 5),
+    notes: "",
+  })
 
   // Caregiver shift state for medication time restriction
   const [caregiverShifts, setCaregiverShifts] = useState<CaregiverShift[]>([])
@@ -144,6 +158,7 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
     else if (isCaregiver && selectedClient) {
       loadData()
       fetchMissingMedications()
+      fetchOpenDays()
     }
   }, [selectedClient, selectedDate])
 
@@ -329,6 +344,50 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
     }
   }
 
+  async function handleExtraMedication() {
+    const clientId = selectedClient?.id
+    if (!clientId) return
+
+    if (!extraMed.name || !extraMed.dosage || !extraMed.unit || !extraMed.time) {
+      alert("Vul alle verplichte velden in")
+      return
+    }
+
+    try {
+      const response = await fetch("/api/medications/administer-extra", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId,
+          name: extraMed.name,
+          dosage: extraMed.dosage,
+          unit: extraMed.unit,
+          time: extraMed.time,
+          date: selectedDate,
+          notes: extraMed.notes || null,
+        }),
+      })
+
+      if (response.ok) {
+        setExtraMedDialogOpen(false)
+        setExtraMed({
+          name: "",
+          dosage: "",
+          unit: "mg",
+          time: new Date().toTimeString().slice(0, 5),
+          notes: "",
+        })
+        loadData()
+      } else {
+        const error = await response.json()
+        alert(error.error || "Fout bij registreren extra medicatie")
+      }
+    } catch (error) {
+      console.error("Error registering extra medication:", error)
+      alert("Er is een fout opgetreden")
+    }
+  }
+
   function changeDate(days: number) {
     const currentDate = parseLocalDate(selectedDate)
     currentDate.setDate(currentDate.getDate() + days)
@@ -339,27 +398,55 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
     setSelectedDate(todayLocal)
   }
 
+  async function fetchOpenDays() {
+    if (!isCaregiver) return
+    try {
+      const response = await fetch("/api/caregiver/missed-tasks")
+      if (response.ok) {
+        const result = await response.json()
+        const dates: string[] = (result.missedDays || [])
+          .map((d: { date: string }) => d.date)
+          .sort()
+        setOpenDays(dates)
+      }
+    } catch {
+      // Silently fail - open day navigation is supplementary
+    }
+  }
+
+  function goToPreviousOpenDay() {
+    const prev = openDays.filter((d) => d < selectedDate)
+    if (prev.length > 0) setSelectedDate(prev[prev.length - 1])
+  }
+
+  function goToNextOpenDay() {
+    const next = openDays.filter((d) => d > selectedDate)
+    if (next.length > 0) setSelectedDate(next[0])
+  }
+
+  const hasPreviousOpenDay = openDays.some((d) => d < selectedDate)
+  const hasNextOpenDay = openDays.some((d) => d > selectedDate)
+
   console.log('[MedicationManagement] Rendering with missingMedicationsCount:', missingMedicationsCount)
 
   if (isLoading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="text-center">Laden...</div>
-      </div>
+      <div className="text-center py-8">Laden...</div>
     )
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="space-y-6">
+    <div className="space-y-6">
         {/* Header */}
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Medicatiebeheer</h1>
+          <p className="text-muted-foreground mt-1">
+            Dagelijks medicatieschema en toedieningen
+          </p>
+        </div>
+
+        {/* Action Buttons */}
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Medicatiebeheer</h1>
-            <p className="text-muted-foreground mt-1">
-              Dagelijks medicatieschema en toedieningen
-            </p>
-          </div>
           <div className="flex items-center gap-3">
             <Link href="/dashboard/medicatie/missing">
               <Button variant="outline">
@@ -375,6 +462,21 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
               <Button variant="outline">Medicatie Overzicht →</Button>
             </Link>
           </div>
+          {isCaregiver && (
+            <Button
+              disabled={!isTodayOrPast || caregiverShifts.length === 0}
+              onClick={() => setExtraMedDialogOpen(true)}
+              title={
+                !isTodayOrPast
+                  ? "Kan geen toekomstige registraties maken"
+                  : caregiverShifts.length === 0
+                  ? "U heeft geen dienst op deze dag"
+                  : undefined
+              }
+            >
+              + Extra Medicatie
+            </Button>
+          )}
         </div>
 
         {/* Daily Summary */}
@@ -415,25 +517,61 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
         <Card>
           <CardContent className="py-4">
             <div className="flex items-center justify-between">
-              <Button variant="outline" onClick={() => changeDate(-1)}>
-                ← Vorige Dag
-              </Button>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                {isCaregiver && openDays.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={goToPreviousOpenDay}
+                    disabled={!hasPreviousOpenDay}
+                    className="text-amber-700 border-amber-300 hover:bg-amber-50"
+                    title="Vorige dag met ontbrekende taken"
+                  >
+                    <ChevronsLeft className="h-4 w-4 mr-1" />
+                    Vorige Open Dag
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={() => changeDate(-1)}>
+                  &larr; Vorige Dag
+                </Button>
+              </div>
+              <div className="flex items-center gap-3">
+                {isCaregiver && openDays.length > 0 && (
+                  <span className="text-xs text-amber-600 font-medium hidden md:inline">
+                    {openDays.length} dag{openDays.length !== 1 ? "en" : ""} open
+                  </span>
+                )}
                 <Input
                   type="date"
+                  title="Selecteer datum"
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
                   className="w-auto"
                 />
                 {!isToday && (
-                  <Button variant="outline" onClick={goToToday}>
+                  <Button variant="outline" size="sm" onClick={goToToday}>
                     Naar Vandaag
                   </Button>
                 )}
               </div>
-              <Button variant="outline" onClick={() => changeDate(1)}>
-                Volgende Dag →
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => changeDate(1)}>
+                  Volgende Dag &rarr;
+                </Button>
+                {isCaregiver && openDays.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={goToNextOpenDay}
+                    disabled={!hasNextOpenDay}
+                    className="text-amber-700 border-amber-300 hover:bg-amber-50"
+                    title="Volgende dag met ontbrekende taken"
+                  >
+                    Volgende Open Dag
+                    <ChevronsRight className="h-4 w-4 ml-1" />
+                  </Button>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -467,6 +605,11 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
                       <div className="flex-1">
                         <div className="font-medium text-lg">
                           {item.medication.name}
+                          {item.isExtra && (
+                            <span className="ml-2 text-xs font-normal text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                              Extra
+                            </span>
+                          )}
                           {item.isOrphaned && (
                             <span className="ml-2 text-xs font-normal text-orange-600 bg-orange-50 px-2 py-1 rounded">
                               Vorig schema
@@ -542,8 +685,6 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
           </Card>
         )}
 
-      </div>
-
       {/* Administer medication dialog */}
       <Dialog open={administerDialogOpen} onOpenChange={setAdministerDialogOpen}>
         <DialogContent>
@@ -597,6 +738,91 @@ export default function MedicationManagementClient({ user }: MedicationManagemen
               Annuleren
             </Button>
             <Button onClick={handleAdministerMedication}>Registreren</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Extra medication dialog */}
+      <Dialog open={extraMedDialogOpen} onOpenChange={setExtraMedDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Extra Medicatie Registreren</DialogTitle>
+            <DialogDescription>
+              Registreer medicatie die niet in het dagelijks schema staat
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="extraMedName">Medicijn naam *</Label>
+              <Input
+                id="extraMedName"
+                value={extraMed.name}
+                onChange={(e) => setExtraMed({ ...extraMed, name: e.target.value })}
+                placeholder="Bijv. Paracetamol"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="extraMedDosage">Dosering *</Label>
+                <Input
+                  id="extraMedDosage"
+                  value={extraMed.dosage}
+                  onChange={(e) => setExtraMed({ ...extraMed, dosage: e.target.value })}
+                  placeholder="Bijv. 500"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Eenheid *</Label>
+                <Select
+                  value={extraMed.unit}
+                  onValueChange={(value) => setExtraMed({ ...extraMed, unit: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mg">mg</SelectItem>
+                    <SelectItem value="ml">ml</SelectItem>
+                    <SelectItem value="tabletten">tabletten</SelectItem>
+                    <SelectItem value="druppels">druppels</SelectItem>
+                    <SelectItem value="stuks">stuks</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="extraMedTime">Tijdstip *</Label>
+              <Input
+                id="extraMedTime"
+                type="time"
+                value={extraMed.time}
+                onChange={(e) => setExtraMed({ ...extraMed, time: e.target.value })}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="extraMedNotes">Notities</Label>
+              <Textarea
+                id="extraMedNotes"
+                value={extraMed.notes}
+                onChange={(e) => setExtraMed({ ...extraMed, notes: e.target.value })}
+                placeholder="Bijv. Hoofdpijn, op verzoek cliënt"
+                rows={3}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setExtraMedDialogOpen(false)}>
+              Annuleren
+            </Button>
+            <Button
+              onClick={handleExtraMedication}
+              disabled={!extraMed.name || !extraMed.dosage || !extraMed.unit || !extraMed.time}
+            >
+              Registreren
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

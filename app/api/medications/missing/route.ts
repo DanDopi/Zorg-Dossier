@@ -133,6 +133,27 @@ export async function GET(request: Request) {
           endTime: shift.endTime,
         })
         caregiverShiftTimeRanges.set(dateKey, existingRanges)
+
+        // For overnight shifts (endTime < startTime), also add to the NEXT day
+        // so that morning medications on the next day are matched to this shift
+        const startMin = timeToMinutes(shift.startTime)
+        const endMin = timeToMinutes(shift.endTime)
+        if (endMin < startMin) {
+          const nextDay = new Date(shiftDate)
+          nextDay.setDate(nextDay.getDate() + 1)
+          const ny = nextDay.getFullYear()
+          const nm = String(nextDay.getMonth() + 1).padStart(2, '0')
+          const nd = String(nextDay.getDate()).padStart(2, '0')
+          const nextDateKey = `${ny}-${nm}-${nd}`
+
+          const nextRanges = caregiverShiftTimeRanges.get(nextDateKey) || []
+          // Add with a synthetic "00:00" start so morning meds up to endTime are covered
+          nextRanges.push({
+            startTime: "00:00",
+            endTime: shift.endTime,
+          })
+          caregiverShiftTimeRanges.set(nextDateKey, nextRanges)
+        }
       }
     }
 

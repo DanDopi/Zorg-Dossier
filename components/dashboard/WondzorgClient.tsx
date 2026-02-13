@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useClient } from "@/lib/ClientContext"
+import { getMaxFileSizeClient } from "@/lib/fileValidation"
 import { WoundCarePlansTab, WoundCareReportsTab } from "./WondzorgTabs"
 
 interface WoundCarePlan {
@@ -100,7 +101,7 @@ interface WondzorgClientProps {
 
 export default function WondzorgClient({ user }: WondzorgClientProps) {
   const { selectedClient } = useClient()
-  const [activeTab, setActiveTab] = useState<"plans" | "reports">("plans")
+  const [activeTab, setActiveTab] = useState<"plans" | "reports">("reports")
   const [isLoading, setIsLoading] = useState(true)
 
   // Wound care plans state
@@ -156,21 +157,51 @@ export default function WondzorgClient({ user }: WondzorgClientProps) {
     nextCareDate: "",
   })
 
+  // File upload size limit
+  const [maxFileSize, setMaxFileSize] = useState(5 * 1024 * 1024)
+
+  // Authorization state
+  const [isAuthorizedForWoundCare, setIsAuthorizedForWoundCare] = useState(false)
+  const [authorizedCaregivers, setAuthorizedCaregivers] = useState<Array<{ id: string; caregiverId: string; name: string; color: string | null; createdAt: string }>>([])
+  const [availableCaregivers, setAvailableCaregivers] = useState<Array<{ caregiverId: string; name: string; color: string | null }>>([])
+
   const isClient = user.role === "CLIENT"
   const isCaregiver = user.role === "CAREGIVER"
+  const canManagePlans = isCaregiver && isAuthorizedForWoundCare
 
   // Determine target client ID
   const targetClientId = isClient
     ? user.clientProfile?.id
     : selectedClient?.id
 
+  // Shift check: caregivers can only create reports if they have a shift on the selected date
+  const [hasShiftOnDate, setHasShiftOnDate] = useState(false)
+  const isFutureDate = selectedDate > new Date().toISOString().split("T")[0]
+  const canCreateReport = isClient || (hasShiftOnDate && !isFutureDate)
+
+  useEffect(() => {
+    getMaxFileSizeClient().then(setMaxFileSize)
+  }, [])
+
+  // Reset selected plan and reports when the client changes
+  useEffect(() => {
+    setSelectedPlanId("")
+    setWoundCarePlans([])
+    setWoundCareReports([])
+    setIsAuthorizedForWoundCare(false)
+    setAuthorizedCaregivers([])
+    setAvailableCaregivers([])
+  }, [targetClientId])
+
   useEffect(() => {
     if (targetClientId) {
       loadData()
+      fetchAuthorizations()
+      if (isCaregiver) checkCaregiverShift()
     } else {
       setIsLoading(false)
     }
-  }, [targetClientId, activeTab, selectedDate, selectedPlanId])
+  }, [targetClientId, activeTab, selectedDate])
 
   async function loadData() {
     setIsLoading(true)
@@ -178,7 +209,10 @@ export default function WondzorgClient({ user }: WondzorgClientProps) {
       if (activeTab === "plans") {
         await fetchWoundCarePlans()
       } else if (activeTab === "reports") {
-        await fetchWoundCareReports()
+        // Always fetch plans so the plan selector is populated
+        // fetchWoundCarePlans returns the effective planId to avoid stale state
+        const effectivePlanId = await fetchWoundCarePlans()
+        await fetchWoundCareReports(effectivePlanId)
       }
     } catch (error) {
       console.error("Error loading data:", error)
@@ -187,37 +221,45 @@ export default function WondzorgClient({ user }: WondzorgClientProps) {
     }
   }
 
-  async function fetchWoundCarePlans() {
+  async function fetchWoundCarePlans(): Promise<string> {
     try {
-      const response = await fetch(`/api/wondzorg/plans?clientId=${targetClientId}&includeInactive=false`)
+      const response = await fetch(`/api/wondzorg/plans?clientId=${targetClientId}&includeInactive=true`)
       if (response.ok) {
         const data = await response.json()
         setWoundCarePlans(data || [])
-        // Set first plan as selected if none selected
-        if (data && data.length > 0 && !selectedPlanId) {
-          setSelectedPlanId(data[0].id)
+        // Set first active plan as selected if none selected or current selection not in list
+        if (data && data.length > 0) {
+          const planIds = data.map((p: WoundCarePlan) => p.id)
+          if (!selectedPlanId || !planIds.includes(selectedPlanId)) {
+            // Prefer first active plan
+            const firstActive = data.find((p: WoundCarePlan) => p.isActive)
+            const newId = firstActive ? firstActive.id : data[0].id
+            setSelectedPlanId(newId)
+            return newId
+          }
+          return selectedPlanId
         }
       }
     } catch (error) {
       console.error("Error fetching wound care plans:", error)
     }
+    return selectedPlanId
   }
 
-  async function fetchWoundCareReports() {
+  async function fetchWoundCareReports(planIdOverride?: string) {
+    const effectivePlanId = planIdOverride || selectedPlanId
     try {
       const params = new URLSearchParams()
       params.set("clientId", targetClientId!)
-      if (selectedPlanId) {
-        params.set("woundCarePlanId", selectedPlanId)
+      if (effectivePlanId) {
+        params.set("woundCarePlanId", effectivePlanId)
       }
       params.set("startDate", selectedDate)
       params.set("endDate", selectedDate)
 
-      console.log("Fetching wound care reports with params:", params.toString())
       const response = await fetch(`/api/wondzorg/reports?${params}`)
       if (response.ok) {
         const data = await response.json()
-        console.log("Fetched wound care reports:", data)
         setWoundCareReports(data || [])
       } else {
         console.error("Failed to fetch wound care reports:", response.status, response.statusText)
@@ -298,6 +340,24 @@ export default function WondzorgClient({ user }: WondzorgClientProps) {
     }
   }
 
+  async function handleReopenPlan(planId: string) {
+    if (!confirm("Weet u zeker dat u dit wondzorgplan wilt heropenen?")) return
+
+    try {
+      const response = await fetch(`/api/wondzorg/plans`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: planId, isActive: true, endDate: "" }),
+      })
+
+      if (response.ok) {
+        await fetchWoundCarePlans()
+      }
+    } catch (error) {
+      console.error("Error reopening wound care plan:", error)
+    }
+  }
+
   async function handleAddReport() {
     if (!targetClientId || !newReport.woundCarePlanId) {
       console.error("Missing required data:", { targetClientId, woundCarePlanId: newReport.woundCarePlanId })
@@ -331,6 +391,8 @@ export default function WondzorgClient({ user }: WondzorgClientProps) {
         complications: newReport.complications || null,
         evaluation: newReport.evaluation,
         generalNotes: newReport.generalNotes || null,
+        photo: newReport.photo || null,
+        photoDate: newReport.photo ? new Date().toISOString() : null,
         nextCareDate: newReport.nextCareDate || null,
       }
 
@@ -407,13 +469,17 @@ export default function WondzorgClient({ user }: WondzorgClientProps) {
     })
   }
 
-  // Update newReport.woundCarePlanId when selectedPlanId changes
+  // Update newReport.woundCarePlanId and re-fetch reports when selectedPlanId changes (user picks plan from dropdown)
   useEffect(() => {
-    if (selectedPlanId && newReport.woundCarePlanId !== selectedPlanId) {
+    if (selectedPlanId) {
       setNewReport(prev => ({
         ...prev,
         woundCarePlanId: selectedPlanId
       }))
+      // Re-fetch reports for the newly selected plan (only on reports tab)
+      if (activeTab === "reports" && targetClientId) {
+        fetchWoundCareReports(selectedPlanId)
+      }
     }
   }, [selectedPlanId])
 
@@ -453,6 +519,92 @@ export default function WondzorgClient({ user }: WondzorgClientProps) {
     setSelectedDate(new Date().toISOString().split("T")[0])
   }
 
+  async function checkCaregiverShift() {
+    if (!isCaregiver || !targetClientId || !user.caregiverProfile) {
+      setHasShiftOnDate(true) // clients always allowed
+      return
+    }
+    try {
+      const response = await fetch(
+        `/api/scheduling/shifts?clientId=${targetClientId}&startDate=${selectedDate}&endDate=${selectedDate}`
+      )
+      if (response.ok) {
+        const data = await response.json()
+        const hasShift = data.some(
+          (shift: any) => shift.caregiverId === user.caregiverProfile?.id
+        )
+        setHasShiftOnDate(hasShift)
+      } else {
+        setHasShiftOnDate(false)
+      }
+    } catch {
+      setHasShiftOnDate(false)
+    }
+  }
+
+  async function fetchAuthorizations() {
+    try {
+      const params = new URLSearchParams()
+      if (isCaregiver && targetClientId) params.set("clientId", targetClientId)
+
+      const response = await fetch(`/api/wondzorg/authorizations?${params}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (isClient) {
+          setAuthorizedCaregivers(data.authorizedCaregivers || [])
+          setAvailableCaregivers(data.availableCaregivers || [])
+        } else if (isCaregiver) {
+          setIsAuthorizedForWoundCare(data.isAuthorized || false)
+        } else {
+          // Admin
+          setIsAuthorizedForWoundCare(true)
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching authorizations:", error)
+    }
+  }
+
+  async function handleAddAuthorization(caregiverId: string) {
+    try {
+      const response = await fetch("/api/wondzorg/authorizations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caregiverId }),
+      })
+
+      if (response.ok) {
+        await fetchAuthorizations()
+      } else {
+        const data = await response.json()
+        alert(data.error || "Er is een fout opgetreden")
+      }
+    } catch (error) {
+      console.error("Error adding authorization:", error)
+      alert("Er is een fout opgetreden bij het toevoegen van de machtiging")
+    }
+  }
+
+  async function handleRemoveAuthorization(caregiverId: string) {
+    if (!confirm("Weet u zeker dat u deze machtiging wilt verwijderen?")) return
+
+    try {
+      const response = await fetch(`/api/wondzorg/authorizations?caregiverId=${caregiverId}`, {
+        method: "DELETE",
+      })
+
+      if (response.ok) {
+        await fetchAuthorizations()
+      } else {
+        const data = await response.json()
+        alert(data.error || "Er is een fout opgetreden")
+      }
+    } catch (error) {
+      console.error("Error removing authorization:", error)
+      alert("Er is een fout opgetreden bij het verwijderen van de machtiging")
+    }
+  }
+
   if (!targetClientId && isCaregiver) {
     return (
       <div className="max-w-4xl mx-auto py-12">
@@ -468,34 +620,50 @@ export default function WondzorgClient({ user }: WondzorgClientProps) {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="space-y-6">
+    <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Wondzorgplan</h1>
             <p className="text-muted-foreground mt-1">
               {isClient
-                ? "Beheer wondzorgplannen en bekijk rapportages"
+                ? "Machtig zorgverleners en bekijk wondzorgplannen en rapportages"
                 : "Bekijk wondzorgplannen en registreer dagelijkse rapportages"}
             </p>
           </div>
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2">
-          <Button
-            variant={activeTab === "plans" ? "default" : "outline"}
-            onClick={() => setActiveTab("plans")}
-          >
-            Wondzorgplannen
-          </Button>
-          <Button
-            variant={activeTab === "reports" ? "default" : "outline"}
-            onClick={() => setActiveTab("reports")}
-          >
-            Dagelijkse Rapportages
-          </Button>
+        <div className="flex items-center justify-between">
+          <div className="flex gap-2">
+            <Button
+              variant={activeTab === "reports" ? "default" : "outline"}
+              onClick={() => setActiveTab("reports")}
+            >
+              Dagelijkse Rapportages
+            </Button>
+            <Button
+              variant={activeTab === "plans" ? "default" : "outline"}
+              onClick={() => setActiveTab("plans")}
+            >
+              Wondzorgplannen
+            </Button>
+          </div>
+          {activeTab === "reports" && isCaregiver && woundCarePlans.length > 0 && selectedPlanId && (
+            <Button
+              onClick={() => setIsReportDialogOpen(true)}
+              disabled={!canCreateReport}
+              title={
+                isFutureDate
+                  ? "Kan geen rapportage maken voor toekomstige dagen"
+                  : !hasShiftOnDate
+                  ? "U heeft geen dienst op deze dag"
+                  : undefined
+              }
+            >
+              + Rapportage Toevoegen
+            </Button>
+          )}
         </div>
 
         {isLoading ? (
@@ -512,9 +680,16 @@ export default function WondzorgClient({ user }: WondzorgClientProps) {
             handleAddPlan={handleAddPlan}
             handleUpdatePlan={handleUpdatePlan}
             handleClosePlan={handleClosePlan}
+            handleReopenPlan={handleReopenPlan}
             openEditPlanDialog={openEditPlanDialog}
             isClient={isClient}
             isCaregiver={isCaregiver}
+            canManagePlans={canManagePlans}
+            maxFileSize={maxFileSize}
+            authorizedCaregivers={authorizedCaregivers}
+            availableCaregivers={availableCaregivers}
+            onAddAuthorization={handleAddAuthorization}
+            onRemoveAuthorization={handleRemoveAuthorization}
           />
         ) : (
           <>
@@ -580,6 +755,24 @@ export default function WondzorgClient({ user }: WondzorgClientProps) {
               </CardContent>
             </Card>
 
+            {/* Warning banners for registration restrictions */}
+            {isCaregiver && !isLoading && isFutureDate && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-2 text-amber-800 text-sm">
+                <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <span>Rapportage is niet mogelijk voor toekomstige dagen.</span>
+              </div>
+            )}
+            {isCaregiver && !isLoading && !isFutureDate && !hasShiftOnDate && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-2 text-amber-800 text-sm">
+                <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <span>U kunt geen rapportage aanmaken omdat u geen dienst heeft op deze dag.</span>
+              </div>
+            )}
+
             <WoundCareReportsTab
               reports={woundCareReports}
               woundCarePlans={woundCarePlans}
@@ -591,10 +784,10 @@ export default function WondzorgClient({ user }: WondzorgClientProps) {
               handleAddReport={handleAddReport}
               selectedDate={selectedDate}
               isCaregiver={isCaregiver}
+              maxFileSize={maxFileSize}
             />
           </>
         )}
       </div>
-    </div>
   )
 }
